@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local secrets & state
+.env
+storage/*.duckdb
+storage/*.duckdb.wal
+storage/*.log
+storage/*.jsonl
+
+# OS
+.DS_Store
