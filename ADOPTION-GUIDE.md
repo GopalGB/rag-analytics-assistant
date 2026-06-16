@@ -6,7 +6,7 @@ same pattern to the equivalent file in your project. Apply them top-to-bottom; r
 
 | # | Problem | Fix | Reference in this repo |
 |---|---------|-----|------------------------|
-| 1 | LLM is optional garnish on a large hand-written intent parser → brittle "normal chatbot" | Make the LLM the primary brain via a **tool-calling loop**; demote deterministic logic to a fallback | `app/agent/engine.py`, `app/agent/fallback.py` |
+| 1 | LLM is optional garnish on a large hand-written intent parser → brittle "normal chatbot" | Make the LLM the **primary brain** via a tool-calling loop; remove the deterministic answer path so the app is strictly LLM-only (fail-fast when no model is configured) | `app/agent/engine.py`, `app/agent/llm.py`, `app/config.py` (`require_llm`) |
 | 2 | "Planner" returns a hand-parsed JSON blob → silent failures on malformed JSON | Use **native tool-calling** with a typed tool schema | `app/agent/tools.py`, `app/agent/llm.py` |
 | 3 | No multi-turn memory → can't handle follow-ups | Add per-session **conversation memory** | `app/agent/memory.py` |
 | 4 | Vectors stored as JSON and scanned row-by-row in Python → won't scale | Dense matrix + single matmul; swap to an ANN index for large corpora | `app/rag/vectors.py` |
@@ -18,6 +18,8 @@ same pattern to the equivalent file in your project. Apply them top-to-bottom; r
 | 10 | Errors can leak internals | Global handler returns a generic 500 | `app/main.py` |
 | 11 | (Keep!) good input firewall + safe SELECT + output scrub | Preserve and extend, don't weaken | `app/security/`, `app/data/store.py` |
 | 12 | A placeholder/guessed model id | Set a **real** model id you have access to; never ship a guess | `app/config.py` (`openai_model`) |
+| 13 | Pluggable model backends | One `converse(...)` interface; swap OpenAI / Bedrock / local CLI freely | `app/agent/llm.py` |
+| 14 | New data needs a restart or a manual re-embed step | **Auto-ingest**: a background watcher re-embeds + re-indexes changed files in the data dir on the fly | `app/data/watcher.py`, `app/main.py` |
 
 ## Detail on the headline change (item 1 + 2): LLM-first agent
 
@@ -32,9 +34,10 @@ runs if the parser misses. Anything unanticipated falls through.
 3. The model reads the result and either calls another tool or gives a final answer.
 4. The loop is capped (`max_tool_iterations`); on exhaustion the model is asked for a final answer with no tools.
 
-Deterministic logic doesn't disappear — it becomes the **safety boundary** (`app/data/store.run_select`
-validates every query regardless of what the model proposes) and the **offline fallback**
-(`app/agent/fallback.py`).
+Deterministic logic doesn't disappear — but it is **not** an answer path. It becomes only the
+**safety boundary** (`app/data/store.run_select` validates every query regardless of what the model
+proposes). There is no offline answerer: if no model is configured the app **fails fast at startup**
+(`require_llm`), so every answer is a real model's answer, never a hand-rolled guess.
 
 ## Detail on SQL safety (item 11) — do NOT rely on a denylist
 

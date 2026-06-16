@@ -74,6 +74,16 @@ class DataStore:
     def load_csv(self, table: str, path: str) -> int:
         return self.load_dataframe(table, pd.read_csv(path))
 
+    def drop_table(self, table: str) -> None:
+        """Drop a loaded table (used when its source file is removed from the data dir).
+
+        The name is validated against a strict identifier pattern — drops are only ever invoked with
+        names produced by ingestion, never with model- or user-supplied text."""
+        if not re.fullmatch(r"[A-Za-z0-9_]+", table) or table.startswith("_"):
+            raise UnsafeQueryError(f"refusing to drop invalid table name: {table!r}")
+        with self._lock:
+            self.con.execute(f'DROP TABLE IF EXISTS "{table}"')
+
     def load_dataframe(self, table: str, df: pd.DataFrame) -> int:
         """Atomic load: build a temp table from the dataframe, then swap. A failed load leaves the
         previous table intact (no drop-then-recreate data-loss window)."""

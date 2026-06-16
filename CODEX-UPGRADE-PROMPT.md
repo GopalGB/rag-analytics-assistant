@@ -16,8 +16,10 @@ Reference architecture (generic, public, synthetic data only):
 STEP 1 — ABSORB
 - Fetch / read that repo, especially: README.md, ADOPTION-GUIDE.md, and everything under app/.
 - Understand its LLM-first design: a bounded tool-calling loop (run_sql + search_docs) as the primary
-  brain, a deterministic fallback for offline use, a safe DuckDB SELECT layer, hybrid BM25+vector
-  retrieval, per-session memory, an input firewall, and an output scrubber.
+  brain — strictly LLM-only (no deterministic answerer; it fails fast if no model is configured),
+  pluggable model backends (OpenAI / AWS Bedrock / local CLI behind one interface), auto-ingest that
+  re-embeds + re-indexes new files in the data dir on the fly, a safe DuckDB SELECT layer, hybrid
+  BM25+vector retrieval, per-session memory, an input firewall, and an output scrubber.
 
 STEP 2 — APPLY (work top-to-bottom through ADOPTION-GUIDE.md)
 For each numbered item in ADOPTION-GUIDE.md:
@@ -36,11 +38,12 @@ HARD RULES
   do not invent one.
 
 PRIORITY ORDER (highest impact first)
-1. LLM-first tool-calling engine + deterministic fallback (items 1, 2).
+1. Strictly LLM-only tool-calling engine — remove any hand-rolled answer path (items 1, 2).
 2. Conversation memory (item 3).
 3. Atomic table reload to stop data loss (item 5).
-4. Remove dead/broken modules; keep imports honest (item 6).
-5. Everything else in the guide.
+4. Pluggable model backends + auto-ingest of new data (items 13, 14).
+5. Remove dead/broken modules; keep imports honest (item 6).
+6. Everything else in the guide.
 
 STEP 3 — REPORT
 Produce a summary: for each guide item — DONE / SKIPPED (why), the files changed, and the test result.

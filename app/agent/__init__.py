@@ -1,4 +1,4 @@
-"""LLM-first agent: a tool-calling brain with a deterministic fallback for offline use."""
+"""LLM-first agent: a live model runs the tool-calling loop (run_sql + search_docs)."""
 
 from app.agent.engine import AgentEngine
 

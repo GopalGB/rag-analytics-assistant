@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -13,7 +15,7 @@ from app.agent.engine import AgentEngine
 from app.agent.llm import build_llm
 from app.agent.memory import ConversationMemory
 from app.config import Settings
-from app.data import ingest
+from app.data import ingest, watcher
 from app.data.store import DataStore
 from app.middleware import install_security_middleware
 from app.rag.embeddings import EmbeddingService
@@ -23,7 +25,21 @@ from app.security import InputGuard
 _UI_FILE = Path(__file__).parent / "ui" / "chat.html"
 
 
+class LLMNotConfiguredError(RuntimeError):
+    """Raised at startup when require_llm is set but no provider is configured."""
+
+
 def build_engine(settings: Settings) -> AgentEngine:
+    llm = build_llm(settings)
+    if llm is None and settings.require_llm:
+        raise LLMNotConfiguredError(
+            "This is an LLM-first assistant and no model is configured. Set ONE of:\n"
+            "  • OPENAI_API_KEY   (OpenAI or any compatible /chat/completions endpoint)\n"
+            "  • BEDROCK_MODEL_ID (AWS Bedrock; pip install boto3 + AWS credentials)\n"
+            "  • LLM_CLI_COMMAND  (a local CLI, e.g. the ChatGPT/Codex CLI on your subscription)\n"
+            "Then restart. To run without a model anyway (it will refuse to answer), set "
+            "REQUIRE_LLM=false."
+        )
     store = DataStore(settings.db_path)
     ingest.load_tables(store, settings.data_dir)
     embeddings = EmbeddingService(
@@ -40,7 +56,7 @@ def build_engine(settings: Settings) -> AgentEngine:
         store=store,
         retriever=retriever,
         guard=guard,
-        llm=build_llm(settings),
+        llm=llm,
         memory=memory,
         max_tool_iterations=settings.max_tool_iterations,
         max_sql_rows=settings.max_sql_rows,
@@ -52,9 +68,26 @@ async def lifespan(app: FastAPI):
     settings = Settings()
     app.state.settings = settings
     app.state.engine = build_engine(settings)
+    # Auto-ingest: watch the data dir and re-embed/re-index new or changed files on the fly.
+    app.state.watch_stop = asyncio.Event()
+    app.state.watch_task = None
+    if settings.auto_reindex:
+        app.state.watch_task = asyncio.create_task(
+            watcher.run_watcher(
+                app.state.engine,
+                settings.data_dir,
+                settings.reindex_interval_seconds,
+                app.state.watch_stop,
+            )
+        )
     try:
         yield
     finally:
+        if app.state.watch_task is not None:
+            app.state.watch_stop.set()
+            app.state.watch_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await app.state.watch_task
         app.state.engine.store.close()
 
 
@@ -107,18 +140,11 @@ def chat(body: ChatIn, request: Request) -> dict:
 
 @app.post("/refresh")
 def refresh(request: Request) -> dict:
+    # Manual trigger for the same reindex the auto-watcher runs (reload tables, re-embed docs).
     settings: Settings = request.app.state.settings
     engine: AgentEngine = request.app.state.engine
-    loaded = ingest.load_tables(engine.store, settings.data_dir)
-    # Build a fresh retriever off to the side, then swap the reference atomically so a concurrent
-    # /chat never observes a half-rebuilt index.
-    new_retriever = Retriever(engine.retriever.embeddings).build(ingest.load_chunks(settings.data_dir))
-    engine.retriever = new_retriever
-    return {
-        "status": "refreshed",
-        "tables": loaded,
-        "doc_chunks": len(new_retriever.chunks),
-    }
+    result = watcher.reindex(engine, settings.data_dir)
+    return {"status": "refreshed", **result}
 
 
 @app.exception_handler(Exception)

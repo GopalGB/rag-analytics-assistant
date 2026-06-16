@@ -1,14 +1,18 @@
-"""AgentEngine — wires guardrail → (LLM tool-loop | deterministic fallback) → output scrub."""
+"""AgentEngine — wires guardrail → LLM tool-loop → output scrub.
+
+This is an LLM-first assistant: every analytical answer comes from a live model running its native
+tool-calling loop. There is no deterministic "offline answerer" — if no LLM is configured the engine
+returns an honest "configure a provider" message rather than faking an answer. Startup normally fails
+fast (see `require_llm`), so this path is only reachable when the operator explicitly opts out.
+"""
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
-from app.agent import fallback
 from app.agent.llm import BaseLLM
 from app.agent.memory import ConversationMemory
-from app.agent.tools import TOOLS, ToolBox
+from app.agent.tools import ToolBox
 from app.data.store import DataStore
 from app.rag.retriever import Retriever
 from app.security import InputGuard, build_system_prompt, scrub
@@ -59,11 +63,19 @@ class AgentEngine:
                 "sources": [],
             }
 
-        if self.llm is not None:
-            payload = self._agentic(session_id, question)
-        else:
-            payload = fallback.answer(question, self.store, self.retriever)
+        if self.llm is None:
+            return {
+                "text": (
+                    "No language model is configured, so I can't answer. This assistant is "
+                    "LLM-first — set one of OPENAI_API_KEY, BEDROCK_MODEL_ID, or LLM_CLI_COMMAND "
+                    "(e.g. the ChatGPT/Codex CLI) and restart."
+                ),
+                "route": "no_llm",
+                "sql": None,
+                "sources": [],
+            }
 
+        payload = self._agentic(session_id, question)
         payload["text"] = scrub(payload.get("text", ""))
         self.memory.add(session_id, "user", question)
         self.memory.add(session_id, "assistant", payload["text"])
@@ -72,55 +84,14 @@ class AgentEngine:
     def _agentic(self, session_id: str, question: str) -> dict[str, Any]:
         toolbox = ToolBox(self.store, self.retriever, max_rows=self.max_sql_rows)
         system = build_system_prompt(self.store.schema_summary(), self.retriever.doc_summary())
-        messages: list[dict[str, Any]] = [{"role": "system", "content": system}]
-        messages.extend(self.memory.history(session_id))
-        messages.append({"role": "user", "content": question})
-
-        final_text = ""
-        for _ in range(self.max_tool_iterations):
-            resp = self.llm.chat(messages, TOOLS)
-            if not resp.tool_calls:
-                final_text = resp.content or ""
-                break
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": resp.content or "",
-                    "tool_calls": [
-                        {
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {
-                                "name": tc.name,
-                                "arguments": json.dumps(tc.arguments),
-                            },
-                        }
-                        for tc in resp.tool_calls
-                    ],
-                }
-            )
-            for tc in resp.tool_calls:
-                result = toolbox.run(tc.name, tc.arguments)
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": json.dumps(result)[:8000],
-                    }
-                )
-        else:
-            # Tool budget exhausted — force a final answer from gathered evidence, no more tools.
-            resp = self.llm.chat(
-                messages
-                + [
-                    {
-                        "role": "user",
-                        "content": "Give your best final answer now from the evidence gathered.",
-                    }
-                ],
-                [],
-            )
-            final_text = resp.content or final_text
+        # The provider runs its own native tool-calling loop and records artifacts on the toolbox.
+        final_text = self.llm.converse(
+            system=system,
+            history=self.memory.history(session_id),
+            question=question,
+            toolbox=toolbox,
+            max_iters=self.max_tool_iterations,
+        )
 
         table_preview = [dict(zip(toolbox.columns, r, strict=False)) for r in toolbox.rows[:100]]
         return {

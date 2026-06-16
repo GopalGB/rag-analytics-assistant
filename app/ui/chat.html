@@ -141,9 +141,9 @@
         try {
           const r = await fetch("/health");
           const h = await r.json();
-          meta.textContent = `${h.llm_enabled ? "LLM" : "offline"} · ${h.tables.length} tables · ${h.doc_chunks} chunks`;
+          meta.textContent = `${h.llm_enabled ? "LLM ready" : "no LLM — set a provider"} · ${h.tables.length} tables · ${h.doc_chunks} chunks`;
         } catch {
-          meta.textContent = "offline";
+          meta.textContent = "server unreachable";
         }
       }
 

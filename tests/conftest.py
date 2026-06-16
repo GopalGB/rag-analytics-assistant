@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from app.agent.llm import LLMResponse, ToolCall
 from app.data import ingest
 from app.data.store import DataStore
 from app.rag.embeddings import EmbeddingService
@@ -47,34 +46,23 @@ def retriever(data_dir: Path) -> Retriever:
 
 
 class FakeLLM:
-    """Scripted LLM: emits the queued responses in order. Lets tests drive the tool loop."""
+    """Implements the converse() interface: optionally fires one SQL tool call, then answers."""
 
-    def __init__(self, script: list[LLMResponse]):
-        self.script = list(script)
-        self.calls: list[list[dict]] = []
+    supports_tools = True
 
-    def chat(self, messages, tools):
-        self.calls.append(messages)
-        return self.script.pop(0) if self.script else LLMResponse(content="done")
+    def __init__(self, sql: str | None = None, answer: str = "done"):
+        self.sql = sql
+        self.answer = answer
+
+    def converse(self, system, history, question, toolbox, max_iters):
+        if self.sql:
+            toolbox.run("run_sql", {"sql": self.sql})
+        return self.answer
 
 
 @pytest.fixture
 def fake_tool_then_answer() -> FakeLLM:
     return FakeLLM(
-        [
-            LLMResponse(
-                tool_calls=[
-                    ToolCall(
-                        id="c1",
-                        name="run_sql",
-                        arguments={
-                            "sql": "SELECT region, sum(revenue) AS total FROM sales GROUP BY region ORDER BY total DESC"
-                        },
-                    )
-                ]
-            ),
-            LLMResponse(
-                content="South leads with 200 in revenue, then North with 150."
-            ),
-        ]
+        sql="SELECT region, sum(revenue) AS total FROM sales GROUP BY region ORDER BY total DESC",
+        answer="South leads with 200 in revenue, then North with 150.",
     )
