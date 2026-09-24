@@ -340,3 +340,16 @@ def test_unreadable_audit_line_is_reported_not_fatal(tmp_path):
     reopened = AuditLog(path)  # must not raise
     assert reopened.verify() == {"ok": False, "entries": 3, "broken_at": 3}
     assert [e["event"] for e in reopened.tail(5)] == ["a", "b"]
+
+
+def test_failed_queries_are_reported_not_shown_as_zero(tmp_path):
+    from app.accounting import analytics
+
+    store = DataStore(str(tmp_path / "q.duckdb"))
+    store.load_dataframe("qbo_bills", pd.DataFrame([{"id": "1", "total": 5.0}]))  # no due_date/balance columns
+    with analytics.collect_query_errors() as errors:
+        rows = analytics.aging(store, "qbo_bills", date(2026, 7, 15))
+    assert errors and "balance" in errors[0].lower()
+    assert all(b["amount"] == 0 for b in rows)  # the page shows the warning next to these zeros
+    assert analytics.query(store, "SELECT nope FROM qbo_bills") == []  # outside a collector: logged only
+    store.close()

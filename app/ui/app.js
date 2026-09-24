@@ -483,6 +483,9 @@ let lastDash = null;
 function renderDash(d) {
   const F = Charts.fmt;
   $("#overview-sub").textContent = `Where things stand as of ${d.as_of}, from local data. Hover or focus any chart for values; "Show table" gives the numbers.`;
+  const errBox = $("#dash-errors");
+  errBox.hidden = !(d.errors && d.errors.length);
+  errBox.replaceChildren(...(d.errors && d.errors.length ? [el("strong", { text: "Some figures could not be computed, so this page may be incomplete: " }), el("span", { text: d.errors.slice(0, 3).join("; ") })] : []));
   const tone = { good: ["var(--status-good)", "✓ OK"], warn: ["var(--status-warning)", "! Check"], bad: ["var(--status-critical)", "✕ Attention"] };
   $("#kpis").replaceChildren(...d.kpis.map((k) => {
     const t = tone[k.tone];

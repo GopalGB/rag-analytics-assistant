@@ -1,0 +1,10 @@
+# GitGuardian configuration. Reviewed false positives only: these are public model names that sat next
+# to the NAME of a settings field in commit b7fe7a7 (app/llm/registry.py), not credentials. Real keys
+# live only in .env / the host's secret store and are never committed.
+version: 2
+secret:
+  ignored-matches:
+    - name: Groq model name (openai/gpt-oss-20b), not a secret
+      match: openai/gpt-oss-20b
+    - name: Groq model name (openai/gpt-oss-120b), not a secret
+      match: openai/gpt-oss-120b

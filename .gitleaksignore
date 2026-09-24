@@ -1,0 +1,3 @@
+# Reviewed false positives (fingerprint = commit:file:rule:line). Each is a model NAME next to the
+# name of a settings field, not a credential. The code was restructured afterwards so it no longer matches.
+d66bdf1057b1b696a79eaec89f0021b6206ed9a5:app/llm/registry.py:generic-api-key:47

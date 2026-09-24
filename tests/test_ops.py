@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -63,3 +64,22 @@ def test_pyproject_dependencies_match_requirements():
            if line.strip() and not line.startswith("#")}
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
     assert set(project["dependencies"]) == req
+
+
+def test_settings_never_print_credentials():
+    s = Settings(anthropic_api_key="sk-ant-" + "x" * 30, app_api_key="k" * 30, qbo_client_secret="topsecretvalue")
+    text = repr(s) + str(s)
+    assert "xxxxxxxxxx" not in text and "kkkkkkkkkk" not in text and "topsecretvalue" not in text
+    assert "anthropic_api_key" in text  # the field is still listed, just masked
+
+
+def test_preflight_flags_an_unsafe_public_demo(tmp_path):
+    env = {k: v for k, v in os.environ.items() if not k.isupper() or k in ("PATH", "HOME", "LANG")}
+    env.update({"PUBLIC_DEMO": "true", "APP_API_KEY": "short", "PREFLIGHT_NO_DOTENV": "1"})
+    out = subprocess.run([sys.executable, str(ROOT / "scripts" / "preflight.py"), "--target", "public-demo"],
+                         capture_output=True, text=True, env=env, cwd=tmp_path)
+    assert out.returncode == 1
+    for fragment in ("[FAIL] APP_API_KEY is at least 24", "[FAIL] DB_PATH=:memory:", "[FAIL] ALLOWED_HOSTS",
+                     "[FAIL] a hosted model is configured"):
+        assert fragment in out.stdout, out.stdout
+    assert "short" not in out.stdout  # never echoes the value

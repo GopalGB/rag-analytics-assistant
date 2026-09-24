@@ -12,7 +12,19 @@ venv/
 
 # Local secrets & state (database, caches, reviews, approvals, activity log, OAuth tokens)
 .env
+.env.*
+!env.example
+*.env
+!deploy/*.env.example
+*.pem
+*.key
+*.p12
+credentials*.json
+.dev.vars
+.vercel/
+.wrangler/
 storage/
+evaluation.json
 
 # Files uploaded through the UI during demos
 data/sample/uploads/

@@ -31,10 +31,25 @@ jobs:
       - name: Acceptance checks
         run: python scripts/evaluate.py
 
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # scan the whole history, not just the last commit
+      - name: Scan for committed credentials (gitleaks)
+        run: |
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.24.2/gitleaks_8.24.2_linux_x64.tar.gz | tar xz gitleaks
+          ./gitleaks git --no-banner --redact --exit-code 1 .
+
   docker:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Validate compose files
+        run: |
+          docker compose -f docker-compose.yml config -q
+          docker compose -f docker-compose.yml -f docker-compose.ollama.yml config -q
       - name: Build image
         run: docker build -t private-ai-assistant:ci .
       - name: Start container and wait until ready

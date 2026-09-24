@@ -310,3 +310,19 @@ def test_extract_endpoint_reads_pasted_invoice(client):
     bad = client.post("/extract", json={"text": "Invoice INV-X1\nQuantity: 3\nUnit price: $10.00\nTotal: $25.00"}).json()
     assert any("3 x unit price 10.00 = 30.00" in i for i in bad["issues"])
     assert client.post("/extract", json={"text": ""}).status_code == 422
+
+
+def test_no_api_response_contains_a_configured_secret(client):
+    """Keys configured on the server never reach the browser, whatever page is opened."""
+    from app.main import app as the_app
+    from app.security.output_filter import register_secret
+
+    ws = the_app.state.ws if hasattr(the_app.state, "ws") else None
+    fake = "sk-test-" + "Q" * 32
+    register_secret(fake)
+    if ws is not None:
+        ws.settings.anthropic_api_key = fake
+    for path in ("/health", "/router", "/privacy", "/dashboard", "/documents", "/invoices", "/qbo/status",
+                 "/reports", "/audit", "/examples", "/approvals"):
+        body = client.get(path).text
+        assert fake not in body and "QQQQQQQQQQ" not in body, path

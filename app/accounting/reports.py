@@ -31,11 +31,7 @@ class ReportContext:
 
 
 def _q(store: DataStore, sql: str) -> list[dict[str, Any]]:
-    try:
-        cols, rows = store.run_select(sql, max_rows=1000)
-    except Exception:
-        return []
-    return [dict(zip(cols, r, strict=False)) for r in rows]
+    return analytics.query(store, sql, 1000)  # failures are logged and reported at the top of the report
 
 
 def _money(v: Any) -> str:
@@ -65,18 +61,21 @@ def build_summary(store: DataStore) -> dict[str, Any]:
         s["invoices"] = _q(store,
             "SELECT count(*) AS documents, count(*) FILTER (WHERE status = 'needs_review') AS needs_review, "
             "count(*) FILTER (WHERE status = 'approved') AS approved, count(*) FILTER (WHERE issue_count > 0) AS flagged, "
-            "round(sum(total) FILTER (WHERE duplicate_of IS NULL AND status <> 'rejected'), 2) AS total_value FROM invoices")[0]
+            "round(sum(total) FILTER (WHERE duplicate_of IS NULL AND status <> 'rejected'), 2) AS total_value FROM invoices")
+        s["invoices"] = s["invoices"][0] if s["invoices"] else {}
     if "invoice_reconciliation" in tables:
         s["attention"] = _q(store,
             "SELECT status, supplier, invoice_number, document_total, qbo_total, detail FROM invoice_reconciliation "
             "WHERE severity <> 'ok' ORDER BY CASE severity WHEN 'issue' THEN 0 ELSE 1 END, supplier")
     if "qbo_bills" in tables:
         s["payables"] = _q(store,
-            "SELECT count(*) FILTER (WHERE balance > 0) AS open_bills, round(sum(balance), 2) AS open_balance FROM qbo_bills")[0]
+            "SELECT count(*) FILTER (WHERE balance > 0) AS open_bills, round(sum(balance), 2) AS open_balance FROM qbo_bills")
+        s["payables"] = s["payables"][0] if s["payables"] else {}
     if "qbo_invoices" in tables:
         s["receivables"] = _q(store,
             "SELECT count(*) FILTER (WHERE balance > 0) AS open_invoices, round(sum(balance), 2) AS open_balance "
-            "FROM qbo_invoices")[0]
+            "FROM qbo_invoices")
+        s["receivables"] = s["receivables"][0] if s["receivables"] else {}
     return out
 
 

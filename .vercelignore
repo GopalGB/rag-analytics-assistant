@@ -17,3 +17,4 @@ storage
 scripts
 Dockerfile
 docker-compose.yml
+docker-compose.ollama.yml

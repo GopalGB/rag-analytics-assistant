@@ -7,6 +7,7 @@ offline QuickBooks sandbox fixture, no cloud AI unless explicitly approved.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Literal
 
@@ -154,6 +155,14 @@ class Settings(BaseSettings):
     prefetch_passages: int = 4  # top passages handed to the model up front (helps small local models)
     max_sql_rows: int = 200
     history_turns: int = 8
+
+    def __repr_args__(self):
+        """Never print credentials: any field whose name marks it as a key, secret or token is masked
+        (so a stray `print(settings)` or an error report can't leak it)."""
+        for name, value in super().__repr_args__():
+            if value and name and re.search(r"(key|secret|token|password)$", name) and not name.endswith("_path"):
+                value = "**********"
+            yield name, value
 
     def allowed_origin_list(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]

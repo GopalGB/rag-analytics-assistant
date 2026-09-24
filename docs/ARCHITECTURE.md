@@ -322,7 +322,7 @@ flowchart LR
 |---|---|---|
 | **Mac Studio, native** (recommended) | `make setup && make run`, launchd for autostart ([INSTALL-MAC.md](INSTALL-MAC.md)) | Ollama on the Metal GPU; lowest latency |
 | **Docker on the Mac** | `docker compose up -d`, with Ollama running natively via `host.docker.internal` | Read-only container, non-root user, state on a named volume, healthcheck on `/ready` |
-| **Linux server** | `docker compose --profile ollama up -d` | Ollama in a container (CPU or NVIDIA) |
+| **Linux server** | `make docker-up-ollama` (adds `docker-compose.ollama.yml`) | Ollama in a container (CPU or NVIDIA), declared local via `LOCAL_MODEL_HOSTS` |
 | **Office network** | Set `APP_API_KEY`, add the Mac's name to `ALLOWED_HOSTS`, put HTTPS in front (e.g. Caddy), `TRUST_LOOPBACK=false` | Per-user sign-in is a pilot-stage item |
 | **Hosted public demo** | Vercel with `PUBLIC_DEMO=true`, optionally behind the Cloudflare Worker in `deploy/` ([DEPLOYMENT.md](DEPLOYMENT.md)) | Read-only and stateless; synthetic and public data only; hosted model |
 

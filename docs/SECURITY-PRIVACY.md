@@ -46,6 +46,16 @@ The **Privacy & security** tab shows this live for the current configuration.
 | Encryption at rest | Use FileVault on the Mac (covers documents, database, log and tokens). |
 | Model training | Local models don't learn from use. Cloud AI is off by default; if approved, use a provider tier that contractually excludes training and retention. |
 
+## Secrets (API keys, tokens)
+
+| Stage | Control |
+|---|---|
+| Where keys live | `.env` on the Mac (chmod 600), or the hosting provider's encrypted settings (Vercel env vars, a Worker secret). Templates (`env.example`, `deploy/vercel.env.example`) contain placeholders only. |
+| Never committed | `.env`, `.env.*`, key/cert files, `.vercel/`, `.wrangler/`, `storage/` and `backups/` are git-ignored. CI runs **gitleaks over the whole git history** on every push; `.pre-commit-config.yaml` runs it before each local commit (`pip install pre-commit && pre-commit install`). `make secrets-scan` runs it on demand. Two reviewed false positives (model names next to a setting's name) are listed with their reason in `.gitleaksignore` / `.gitguardian.yaml`. |
+| Before deploying | `make preflight TARGET=local|docker|public-demo` checks the configuration (key present and long enough, `.env` permissions, no credential-shaped strings in tracked files, safe public-demo settings) without printing any value. |
+| At runtime | Keys are never sent to the browser (a test opens every page and checks). Configured keys are registered with the output scrubber, so a model echoing one is redacted, including while streaming. `Settings` masks every key/secret/token field if printed or logged. Logs never include headers, questions or document text. |
+| Rotation | Replace the value in `.env` or the host's settings and restart; nothing else stores it. For the demo, rotate `APP_API_KEY` and the Worker's `ORIGIN_API_KEY` together. |
+
 ## Identity in this prototype
 
 The name typed in the UI is used to attribute reviews and approvals in the log. It is **not**

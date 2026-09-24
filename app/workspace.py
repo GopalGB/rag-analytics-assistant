@@ -325,6 +325,12 @@ class Workspace:
 
     # ---- dashboard + reports -------------------------------------------------
     def dashboard(self) -> dict[str, Any]:
+        with analytics.collect_query_errors() as errors:
+            out = self._dashboard()
+        out["errors"] = errors
+        return out
+
+    def _dashboard(self) -> dict[str, Any]:
         st, as_of = self.store, self.as_of
         inv_conf = []
         if "invoices" in st.tables():
@@ -352,8 +358,14 @@ class Workspace:
         spec = reports.REPORTS.get(report_id)
         if spec is None:
             raise KeyError(report_id)
-        md = spec["build"](self._report_ctx())
-        return {"id": report_id, "title": spec["title"], "markdown": md}
+        with analytics.collect_query_errors() as errors:
+            md = spec["build"](self._report_ctx())
+        if errors:
+            warning = (f"> **Warning:** {len(errors)} part(s) of this report could not be computed, so some figures "
+                       f"below may be incomplete: {'; '.join(errors[:3])}\n\n")
+            lines = md.split("\n", 1)
+            md = lines[0] + "\n\n" + warning + (lines[1] if len(lines) > 1 else "")
+        return {"id": report_id, "title": spec["title"], "markdown": md, "errors": errors}
 
     def report_summary(self, report_id: str, actor: str = "local-user") -> dict[str, Any]:
         """Optional AI-written summary of a report. Routed by the privacy policy: accounting reports only

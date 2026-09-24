@@ -6,7 +6,11 @@ All date-relative figures (aging, overdue) use an as-of date: REPORT_AS_OF if se
 
 from __future__ import annotations
 
+import logging
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import date
 from typing import Any
 
@@ -26,12 +30,38 @@ def as_of_date(value: str | None) -> date:
     return date.today()
 
 
-def _q(store: DataStore, sql: str) -> list[dict[str, Any]]:
+# Failed queries are never shown as "nothing found" or zero: they are logged, and collected here so the
+# dashboard and reports can say which figures could not be computed.
+QUERY_ERRORS: ContextVar[list[str] | None] = ContextVar("query_errors", default=None)
+
+
+@contextmanager
+def collect_query_errors() -> Iterator[list[str]]:
+    errors: list[str] = []
+    token = QUERY_ERRORS.set(errors)
     try:
-        cols, rows = store.run_select(sql, max_rows=5000)
-    except Exception:
+        yield errors
+    finally:
+        QUERY_ERRORS.reset(token)
+
+
+def query(store: DataStore, sql: str, max_rows: int = 5000) -> list[dict[str, Any]]:
+    try:
+        cols, rows = store.run_select(sql, max_rows=max_rows)
+    except Exception as exc:
+        from app.observability import event
+
+        message = f"{type(exc).__name__}: {str(exc)[:200]}"
+        event("query_failed", logging.WARNING, error=message)
+        errors = QUERY_ERRORS.get()
+        if errors is not None:
+            errors.append(message)
         return []
     return [dict(zip(cols, r, strict=False)) for r in rows]
+
+
+def _q(store: DataStore, sql: str) -> list[dict[str, Any]]:
+    return query(store, sql, 5000)
 
 
 def _bucket(days: int) -> str:

@@ -33,34 +33,38 @@ from app.llm.providers import (
 
 @dataclass(frozen=True)
 class ProviderInfo:
-    key_setting: str | None  # Settings field holding the API key
+    key_prefix: str | None  # the API key lives in Settings field "<key_prefix>_api_key" (None = no key)
     fast: str | None  # default model for the fast tier (None = must be set explicitly)
     strong: str | None
     base_url: str | None = None  # OpenAI-compatible base URL
     json_mode: str = "json_object"
     label: str = ""
 
+    @property
+    def key_setting(self) -> str | None:
+        """Settings field holding the API key (built from the prefix, so no key name sits next to a model
+        name in source, which secret scanners mistake for a hard-coded credential)."""
+        return f"{self.key_prefix}_api_key" if self.key_prefix else None
+
 
 # Defaults are conveniences. Model names change: set LLM_MODELS_FAST / LLM_MODELS_STRONG to the exact
 # models your account has access to.
-GROQ_FAST_MODEL = "openai/" + "gpt-oss-20b"  # open-weight models served by Groq (model names, not secrets)
-GROQ_STRONG_MODEL = "openai/" + "gpt-oss-120b"
 PROVIDERS: dict[str, ProviderInfo] = {
-    "anthropic": ProviderInfo("anthropic_api_key", "claude-haiku-4-5-20251001", "claude-sonnet-5", label="Anthropic Claude"),
-    "openai": ProviderInfo("openai_api_key", "gpt-4o-mini", "gpt-4o", json_mode="json_schema", label="OpenAI"),
-    "gemini": ProviderInfo("gemini_api_key", "gemini-2.5-flash", "gemini-2.5-pro",
+    "anthropic": ProviderInfo("anthropic", "claude-haiku-4-5-20251001", "claude-sonnet-5", label="Anthropic Claude"),
+    "openai": ProviderInfo("openai", "gpt-4o-mini", "gpt-4o", json_mode="json_schema", label="OpenAI"),
+    "gemini": ProviderInfo("gemini", "gemini-2.5-flash", "gemini-2.5-pro",
                            "https://generativelanguage.googleapis.com/v1beta/openai", label="Google Gemini"),
-    "openrouter": ProviderInfo("openrouter_api_key", "openai/gpt-4o-mini", "openai/gpt-4o",
+    "openrouter": ProviderInfo("openrouter", "openai/gpt-4o-mini", "openai/gpt-4o",
                                "https://openrouter.ai/api/v1", label="OpenRouter"),
-    "azure": ProviderInfo("azure_openai_api_key", None, None, label="Azure OpenAI (model = deployment name)"),
-    "groq": ProviderInfo("groq_api_key", fast=GROQ_FAST_MODEL, strong=GROQ_STRONG_MODEL,
+    "azure": ProviderInfo("azure_openai", None, None, label="Azure OpenAI (model = deployment name)"),
+    "groq": ProviderInfo("groq", fast="openai/gpt-oss-20b", strong="openai/gpt-oss-120b",
                          base_url="https://api.groq.com/openai/v1", label="Groq"),
-    "mistral": ProviderInfo("mistral_api_key", "mistral-small-latest", "mistral-large-latest",
+    "mistral": ProviderInfo("mistral", "mistral-small-latest", "mistral-large-latest",
                             "https://api.mistral.ai/v1", label="Mistral"),
-    "deepseek": ProviderInfo("deepseek_api_key", "deepseek-chat", "deepseek-chat", "https://api.deepseek.com/v1",
+    "deepseek": ProviderInfo("deepseek", "deepseek-chat", "deepseek-chat", "https://api.deepseek.com/v1",
                              label="DeepSeek"),
-    "together": ProviderInfo("together_api_key", None, None, "https://api.together.xyz/v1", label="Together AI"),
-    "xai": ProviderInfo("xai_api_key", None, None, "https://api.x.ai/v1", label="xAI"),
+    "together": ProviderInfo("together", None, None, "https://api.together.xyz/v1", label="Together AI"),
+    "xai": ProviderInfo("xai", None, None, "https://api.x.ai/v1", label="xAI"),
     "bedrock": ProviderInfo(None, None, None, label="AWS Bedrock"),
     "ollama": ProviderInfo(None, None, None, label="Ollama (local)"),
     "cli": ProviderInfo(None, None, None, label="Command-line model"),
