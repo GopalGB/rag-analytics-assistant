@@ -18,7 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from app.accounting import analytics, bank, qbo_sync, reconcile, reports
+from app.accounting import analytics, bank, insights, qbo_sync, reconcile, reports
 from app.agent.engine import AgentEngine
 from app.agent.memory import ConversationMemory
 from app.approvals import ApprovalQueue
@@ -91,6 +91,7 @@ class Workspace:
             approvals=None if settings.public_demo else self.approvals,  # no proposing actions in the demo
             on_event=self.audit.record,
             prefetch_passages=settings.prefetch_passages,
+            insights=self.attention,
         )
         self.qbo = self._build_qbo()
         self.audit.record(
@@ -324,6 +325,13 @@ class Workspace:
         return out
 
     # ---- dashboard + reports -------------------------------------------------
+    def attention(self) -> dict[str, Any]:
+        """The ranked "needs attention" list (see app/accounting/insights.py)."""
+        with analytics.collect_query_errors() as errors:
+            out = insights.attention(self.store, self.engine.documents, self.as_of)
+        out["errors"] = errors
+        return out
+
     def dashboard(self) -> dict[str, Any]:
         with analytics.collect_query_errors() as errors:
             out = self._dashboard()

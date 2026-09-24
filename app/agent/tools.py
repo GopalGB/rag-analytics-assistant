@@ -4,6 +4,7 @@
 - search_docs     hybrid retrieval over documents; every hit carries file + page for citation
 - propose_action  queue an external action (email, QuickBooks entry, task) for HUMAN approval — the
                   model can never execute anything itself
+- attention_items the ranked "needs attention" list (accounting, bank, budget, deadlines, policy), with sources
 
 Type-safe: tool schemas are generated from the Pydantic models in `app.llm.schemas`, and every call's
 arguments are validated against the same models before anything runs; invalid calls are answered with
@@ -21,7 +22,7 @@ from pydantic import ValidationError
 
 from app.data.store import DataStore, UnsafeQueryError
 from app.llm.privacy import PrivacyGuard
-from app.llm.schemas import TOOL_ARGS, ProposeActionArgs, RunSqlArgs, SearchDocsArgs, tool_spec
+from app.llm.schemas import TOOL_ARGS, AttentionArgs, ProposeActionArgs, RunSqlArgs, SearchDocsArgs, tool_spec
 from app.rag.retriever import Retriever
 
 ALL_TOOLS = tuple(TOOL_ARGS)
@@ -39,6 +40,7 @@ class ToolBox:
         approvals: Any = None,
         allowed_tools: tuple[str, ...] | None = None,
         privacy: PrivacyGuard | None = None,
+        insights: Any = None,
     ):
         self.store = store
         self.retriever = retriever
@@ -47,6 +49,9 @@ class ToolBox:
         self.allowed_tools = tuple(t for t in (allowed_tools or ALL_TOOLS) if t in TOOL_ARGS)
         if approvals is None:
             self.allowed_tools = tuple(t for t in self.allowed_tools if t != "propose_action")
+        self.insights = insights  # callable returning the attention list; the tool is offered only with it
+        if insights is None:
+            self.allowed_tools = tuple(t for t in self.allowed_tools if t != "attention_items")
         self.privacy = privacy
         self.last_sql: str | None = None
         self.columns: list[str] = []
@@ -82,7 +87,18 @@ class ToolBox:
             return self._log(name, self._run_sql(parsed.sql))
         if isinstance(parsed, SearchDocsArgs):
             return self._log(name, self._search_docs(parsed.query, parsed.k))
+        if isinstance(parsed, AttentionArgs):
+            return self._log(name, self._attention(parsed.limit))
         return self._log(name, self._propose_action(parsed))
+
+    def _attention(self, limit: int) -> dict[str, Any]:
+        from app.accounting.insights import for_model
+
+        if self.privacy and self.privacy.cloud and not self.privacy.policy.cloud_ok_for("accounting"):
+            return {"error": "blocked by privacy policy: the attention list includes accounting and bank data, which "
+                             "must stay on this machine. Say that this needs the local model."}
+        self.touched_classes.add("accounting")
+        return for_model(self.insights(), limit)
 
     def _log(self, name: str, result: dict[str, Any]) -> dict[str, Any]:
         self.calls.append({"tool": name, "ok": "error" not in result, "error": result.get("error")})

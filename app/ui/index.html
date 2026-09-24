@@ -151,6 +151,22 @@
   .viz-table { margin-top: 6px; } .viz-table table { margin-top: 6px; }
   .viz-table-btn { background: none; border: 0; color: var(--accent); cursor: pointer; font-size: 12px; padding: 0; }
   .viz-empty { color: var(--muted); font-size: 13px; padding: 20px 0; }
+  .attn-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 14px; margin-bottom: 14px; }
+  .attn, .dl { list-style: none; margin: 0; padding: 0; }
+  .attn li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 10px; padding: 9px 0; border-top: 1px solid var(--border); }
+  .attn li:first-child { border-top: 0; }
+  .attn .sev { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 650; white-space: nowrap; padding-top: 2px; }
+  .attn .sev i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .attn .t { font-weight: 600; font-size: 13.5px; }
+  .attn .amt { font-variant-numeric: tabular-nums; font-weight: 650; font-size: 13.5px; text-align: right; white-space: nowrap; }
+  .attn .d { grid-column: 2 / 4; font-size: 12.5px; color: var(--muted); }
+  .attn .meta { grid-column: 2 / 4; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; font-size: 12px; }
+  .attn .meta button { font: inherit; font-size: 12px; background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; }
+  .dl li { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 2px 10px; padding: 8px 0; border-top: 1px solid var(--border); font-size: 12.5px; }
+  .dl li:first-child { border-top: 0; }
+  .dl .when { font-variant-numeric: tabular-nums; font-weight: 650; }
+  .dl .src { grid-column: 2; font-size: 12px; }
+  @media (max-width: 860px) { .attn-grid { grid-template-columns: 1fr; } }
   .kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; margin-bottom: 14px; }
   .kpi { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px; box-shadow: var(--shadow); }
   .kpi .label { font-size: 12px; color: var(--muted); }
@@ -202,6 +218,23 @@
       <p class="sub" id="overview-sub">Where things stand, from local data. Hover or focus any chart for values; "Show table" gives the numbers.</p>
       <div class="warnbox" id="dash-errors" hidden></div>
       <div class="kpis" id="kpis"></div>
+      <div class="attn-grid">
+        <div class="card" id="attention-card">
+          <div class="row" style="justify-content:space-between;align-items:baseline">
+            <h3 style="margin:0">Needs your attention</h3>
+            <span class="small muted" id="attention-summary"></span>
+          </div>
+          <p class="small muted" style="margin:4px 0 8px">Ranked across invoices, QuickBooks, the bank statement, budgets, your approval policy and deadlines in the documents. Every item names its source; nothing here is AI-generated.</p>
+          <ol class="attn" id="attention-list"></ol>
+          <div class="row"><button class="btn" id="attention-more" type="button" hidden>Show all</button>
+            <a class="btn" href="#reports" id="attention-report" style="text-decoration:none">Month-end checklist →</a></div>
+        </div>
+        <div class="card" id="deadline-card">
+          <h3 style="margin:0">Deadlines in your documents</h3>
+          <p class="small muted" style="margin:4px 0 8px">Renewals, expiries, notices, inspections and milestones, read from the documents with the sentence they came from.</p>
+          <ol class="dl" id="deadline-list"></ol>
+        </div>
+      </div>
       <div class="grid2">
         <div class="card chart-card"><h3>Payables by days overdue</h3><p class="sub muted">Open bills in QuickBooks</p><div id="ch-ap"></div></div>
         <div class="card chart-card"><h3>Receivables by days overdue</h3><p class="sub muted">Open customer invoices in QuickBooks</p><div id="ch-ar"></div></div>

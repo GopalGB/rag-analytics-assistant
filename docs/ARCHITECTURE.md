@@ -226,7 +226,11 @@ flowchart LR
     QT --> RB --> BT[(bank_reconciliation)]
     RT & BT & QT & BUD[(project budget)] --> AN[analytics]
     AN --> DASH[Overview dashboard]
-    AN --> REP[Reports: accounts, aging,<br/>outstanding items, project status]
+    AN --> REP[Reports: month-end checklist, accounts,<br/>aging, outstanding items, project status]
+    RT & BT & QT & BUD & DOCS[documents] --> INS[insights: attention list,<br/>deadlines, policy checks, anomalies]
+    INS --> DASH
+    INS --> REP
+    INS --> TOOL[attention_items tool]
     REP -. optional .-> AI[AI summary<br/>privacy-routed, labelled]
 ```
 
@@ -237,6 +241,13 @@ flowchart LR
   bills marked paid with no bank evidence.
 - **Analytics** (`accounting/analytics.py`): aging buckets, spend by supplier, cash flow, budget versus
   actual, KPIs. All of it is SQL, and all of it uses an as-of date (`REPORT_AS_OF`).
+- **Insights** (`accounting/insights.py`, `documents/deadlines.py`): one ranked "needs attention" list from
+  all of the above plus the documents: deadlines are dates next to deadline words ("due", "notice",
+  "expiry"...), with PDF line wraps re-joined; approval thresholds and the recording deadline are parsed
+  from the policy document and applied to invoices; unusual (more than twice the supplier's median) and
+  repeated bills are flagged. Severity first, then money involved. The model reaches it through the
+  `attention_items` tool (local-only for accounting data); with no model, prioritisation questions are
+  answered from the list directly.
 - **Reports** (`accounting/reports.py`) are drafts in Markdown and printable HTML. They quote document
   sections with sources, and they cross-check figures stated in documents against spreadsheets (e.g.
   a project report whose spend figure disagrees with the budget sheet).
@@ -353,6 +364,7 @@ verifies every checksum and refuses to overwrite existing state without `--force
 | GET/POST | `/qbo/status`, `/qbo/sync`, `/qbo/connect`, `/qbo/callback`, `/qbo/disconnect`, `/qbo/data` | QuickBooks (read-only), OAuth, revoke |
 | GET | `/reconciliation`, `/bank-reconciliation` | Invoice and bank matching results |
 | GET | `/dashboard` | KPIs and chart series |
+| GET | `/insights`, `/deadlines` | Ranked attention list with sources; deadlines read from documents |
 | GET/POST | `/reports`, `/reports/{id}`, `/reports/{id}.md`, `/reports/{id}.html`, `/reports/{id}/summary` | Draft reports; optional AI summary |
 | GET/POST | `/approvals`, `/approvals/{id}/decision` | Approval queue |
 | GET | `/router`, `/privacy`, `/audit` | Models and routing, privacy policy, activity log |

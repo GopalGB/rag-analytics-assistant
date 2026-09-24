@@ -26,8 +26,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Proxy worker tests
-        run: node --test tests/*.mjs
+      - name: Proxy worker tests and UI syntax check
+        run: |
+          node --test tests/*.mjs
+          node --check app/ui/app.js
+          node --check app/ui/charts.js
       - name: Acceptance checks
         run: python scripts/evaluate.py
 

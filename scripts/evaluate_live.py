@@ -139,6 +139,13 @@ def evaluate(http: Http, runs: int = 20, pace: float = 0.0, max_p95_ms: float | 
     if not report["checks"]["invoice_lab_flags_problems"]:
         failures.append(f"extract: malformed invoice not flagged (HTTP {s})")
 
+    s, attn, _ = http("GET", "insights", None)
+    report["checks"]["attention_list"] = bool(s == 200 and attn and attn.get("items")
+                                              and all(i.get("source", {}).get("name") for i in attn["items"]))
+    report["corpus"]["attention_items"] = len((attn or {}).get("items", []))
+    report["corpus"]["deadlines"] = len((attn or {}).get("deadlines", []))
+    if not report["checks"]["attention_list"]:
+        failures.append("insights: no attention list, or an item without a source")
     s, dash, _ = http("GET", "dashboard", None)
     report["checks"]["dashboard"] = s == 200 and bool(dash and dash.get("kpis"))
     s, rep, _ = http("GET", "reports/project", None)

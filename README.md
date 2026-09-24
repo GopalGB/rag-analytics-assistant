@@ -9,7 +9,7 @@ read-only workflow**, and flags anything missing, inconsistent or uncertain inst
 > contracts, invoices, bank lines and QuickBooks sandbox company). No real company data, passwords or
 > credentials are needed to run it.
 
-| Overview: KPIs, aging, spend, cash flow, budget charts | Reports: draft reports with sources and discrepancies |
+| Overview: what needs attention, ranked, with sources and deadlines | Reports: draft reports with sources and discrepancies |
 |---|---|
 | ![Overview dashboard](docs/images/overview.png) | ![Reports screen](docs/images/reports.png) |
 | **Ask: cited answers, "not found" when it isn't there** | **Invoices: extracted fields, confidence, flags** |
@@ -33,6 +33,7 @@ OpenAI-compatible server. On the Mac Studio the recommended model is Qwen 2.5 14
 | Useful results on documents it has not processed before | `data/unseen_invoices/` holds invoices in new layouts (incl. a phone-photo PNG, plain-text and AED invoices). Upload them live, or paste any invoice's text into the **Invoice lab**: fields are read with the line they came from, and unreadable totals or quantity × price mismatches are flagged. | Documents → upload, Invoices → Invoice lab |
 | External actions need explicit approval | The assistant can only *propose* an email or a QuickBooks entry. A named person approves or rejects it; in this prototype approved actions are logged but not executed. | **Approvals** tab |
 | Use any AI provider, safely | Add any API key (Claude, OpenAI, Gemini, OpenRouter, Azure, Groq, Mistral, DeepSeek, Together, xAI, Bedrock) and/or local Ollama. A **task router** picks the pipeline per request, a **model router** handles fast/strong tiers, fallback, circuit breaking, tokens and cost, and a **privacy router** keeps accounting, invoice, bank and high-risk personal data on local models and masks PII sent to the cloud. Model outputs and tool calls are **type-checked** (Pydantic). | **AI models** tab, answer trace, [docs/LLM-ROUTING.md](docs/LLM-ROUTING.md) |
+| Tells you what to do next | **Needs your attention**: one ranked list across invoices, QuickBooks, the bank statement, budgets and the documents: duplicates, unrecorded or mismatched invoices, overdue money, bills marked paid with no bank payment, budget overruns, overdue certificates and sign-offs. The company's **own approval policy is read from its policy document** and applied ("over $5,000: a director"; "record within 5 business days"), and unusual or repeated bills are flagged. Every item shows its source and money involved; *"What needs my attention this week?"* answers from it even with no AI model. **Deadlines** (renewals, notices, expiries, inspections) are read out of the documents with the sentence they came from, and a **Month-end checklist** report ties it together. | **Overview**, **Reports** |
 | Graphs, reports and accounting checks | **Overview** dashboard: KPIs, payables/receivables aging, spend by supplier, cash flow and budget vs. actual, drawn as accessible SVG charts (table view included). Bank lines are matched to QuickBooks bills and receipts, invoice line items are checked against subtotals, and draft reports (accounts summary, aging, outstanding items, project status) are built from the data with each figure's source, flagging where a document and a spreadsheet disagree. | **Overview**, **Reports** tabs |
 | Answers that feel fast, search that understands wording | Answers **stream** word by word (SSE) with live status (route, model, tools used). Search mixes keywords with **semantic embeddings** (local `nomic-embed-text` via Ollama, cached on disk), removes near-duplicate passages (MMR) and can be re-ranked by a local model. | **Ask** tab |
 | Activity logs, access control, revocation, local processing | Tamper-evident (hash-chained) activity log; binds to 127.0.0.1 with optional API key; QuickBooks disconnect revokes tokens and deletes the local copy; a live page states what runs where and what leaves the machine. | **Activity log**, **Privacy & security** tabs |
@@ -43,6 +44,12 @@ Measured results on the synthetic set (from `make evaluate`, see [docs/TEST-RESU
 5/5 planted problems flagged, 10/10 search questions return the right document first, 3/3 unanswerable
 questions answered "not found", 8/8 invoices reconciled correctly against QuickBooks, 8/8 bank lines
 classified correctly, 11/11 invoices with correct line items, 6/8 reworded questions found by semantic search (7/8 before the 28-page IRS publication joined the corpus).
+
+## Pulling this repo to deploy it
+
+Everything is ready except your own keys and hosting accounts. Follow [docs/HANDOFF.md](docs/HANDOFF.md):
+clone, `make setup && make test`, add keys to `.env` (never committed), `make preflight`, then deploy to
+the Mac, Docker or the hosted demo.
 
 ## Share it without installing: hosted public demo
 
@@ -169,6 +176,7 @@ docs/                  install, operations, QuickBooks, security, dependencies, 
 | [QUICKBOOKS.md](docs/QUICKBOOKS.md) | Connecting an Intuit sandbox company (read-only) |
 | [SECURITY-PRIVACY.md](docs/SECURITY-PRIVACY.md) | Data flows, controls, credentials, revocation |
 | [DEPENDENCIES.md](docs/DEPENDENCIES.md) | Models, software, licences and recurring costs |
+| [HANDOFF.md](docs/HANDOFF.md) | Checklist for taking this repo and deploying it with your own keys |
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Mac, Docker, or the hosted public demo (Vercel + Cloudflare Worker) |
 | [PUBLIC-DOCUMENTS.md](docs/PUBLIC-DOCUMENTS.md) | The real public documents in the sample data, with sources and licences |
 | [TEST-RESULTS.md](docs/TEST-RESULTS.md) | Measured results on the sample and unseen documents |

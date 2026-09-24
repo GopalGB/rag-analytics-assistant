@@ -56,10 +56,28 @@ class ProposeActionArgs(BaseModel):
     details: str = Field(default="", max_length=4000, description="Full draft / details for the approver.")
 
 
+class AttentionArgs(BaseModel):
+    """List what needs attention now, ranked: reconciliation problems, invoices to review, overdue money,
+    bank mismatches, budget overruns, overdue or near deadlines from the documents, approval-policy checks
+    and unusual bills. Each item has its source. Use it for "what should I look at / prioritise" questions."""
+
+    model_config = ConfigDict(extra="ignore")
+    limit: int = Field(default=12, description="How many items (1-30, default 12).")
+
+    @field_validator("limit", mode="before")
+    @classmethod
+    def _clamp(cls, v: Any) -> int:
+        try:
+            return max(1, min(int(v), 30))
+        except (TypeError, ValueError):
+            return 12
+
+
 TOOL_ARGS: dict[str, type[BaseModel]] = {
     "run_sql": RunSqlArgs,
     "search_docs": SearchDocsArgs,
     "propose_action": ProposeActionArgs,
+    "attention_items": AttentionArgs,
 }
 
 

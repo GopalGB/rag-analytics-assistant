@@ -293,7 +293,42 @@ def report_project(ctx: ReportContext) -> str:
     return "\n".join(out)
 
 
+def report_month_end(ctx: ReportContext) -> str:
+    from app.accounting.insights import attention
+
+    a = attention(ctx.store, ctx.documents, ctx.as_of)
+    c = a["counts"]
+    out = _header("Month-end checklist", ctx)
+    out += [f"{c['critical']} to do first, {c['warning']} this week, {c['info']} for information. "
+            f"Money involved in open problems: {_money(a['money_at_stake'])}. Every item below was computed from the "
+            "local data and names its source.", ""]
+
+    def src(i: dict[str, Any]) -> str:
+        s = i["source"]
+        name = str(s.get("name", "")).rsplit("/", 1)[-1]
+        return f"{name}, p.{s['page']}" if s.get("page") else name
+
+    for sev, heading in (("critical", "Do first"), ("warning", "This week"), ("info", "For information")):
+        rows = [i for i in a["items"] if i["severity"] == sev]
+        out += [f"## {heading} ({len(rows)})", ""]
+        out += [f"- [ ] **{i['title']}**{' (' + _money(i['amount']) + ')' if i['amount'] else ''}: {i['detail']} "
+                f"(source: {src(i)})" for i in rows] or ["_None._"]
+        out.append("")
+    out += ["## Deadlines found in the documents", ""]
+    out += _table(["Date", "Status", "What", "Source"],
+                  [[d["date"], d["status"].replace("_", " "), d["text"][:120],
+                    d["file"].rsplit("/", 1)[-1] + (f", p.{d['page']}" if d["page"] else "")] for d in a["deadlines"]])
+    if a["approval_rules"]:
+        out += ["## Approval policy applied", ""]
+        out += _table(["Amount", "Approved by", "Source"],
+                      [[("over " + _money(r["over"])) + (f" up to {_money(r['up_to'])}" if r["up_to"] else ""),
+                        r["approver"], r["file"].rsplit("/", 1)[-1]] for r in a["approval_rules"]])
+    return "\n".join(out)
+
+
 REPORTS: dict[str, dict[str, Any]] = {
+    "month_end": {"title": "Month-end checklist", "description": "Everything that needs attention, ranked, with sources.",
+                  "build": report_month_end, "data_class": "accounting"},
     "accounts": {"title": "Accounts summary", "description": "Invoices, QuickBooks and bank discrepancies, aging.",
                  "build": report_accounts, "data_class": "accounting"},
     "aging": {"title": "Payables & receivables aging", "description": "Open balances by days overdue, with lists.",
@@ -339,7 +374,8 @@ def markdown_to_html(md: str, title: str) -> str:
         elif ln.startswith("- "):
             items = []
             while i < len(lines) and lines[i].startswith("- "):
-                items.append(f"<li>{_inline(lines[i][2:])}</li>")
+                item = lines[i][2:]
+                items.append(f"<li>&#9744; {_inline(item[4:])}</li>" if item.startswith("[ ] ") else f"<li>{_inline(item)}</li>")
                 i += 1
             body.append("<ul>" + "".join(items) + "</ul>")
             continue

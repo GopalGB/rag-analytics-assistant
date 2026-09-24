@@ -130,7 +130,7 @@ def test_model_classifies_when_rules_unsure():
         calls.append(q)
         return RouteDecision(intent="accounting", confidence=0.7, reason="asks for figures")
 
-    plan = IntentRouter().plan("hmm, anything odd lately?", classify=classify)
+    plan = IntentRouter().plan("hmm, how are things looking lately?", classify=classify)
     assert calls and plan.intent == "accounting" and plan.method == "model"
     # a failing classifier falls back to the safe default
     assert IntentRouter().plan("hmm?", classify=lambda q: (_ for _ in ()).throw(RuntimeError())).intent == "general"

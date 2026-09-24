@@ -4,7 +4,16 @@ Start from a clean state: `make demo` (clears previous reviews, approvals, log a
 the server). Open <http://127.0.0.1:8000> and type a name in **You** (top right) — reviews and approvals
 are recorded against it.
 
-## 0. The overview (1 min)
+## 0. The overview (2 min)
+
+Start with **Needs your attention** on the Overview: one ranked list, each item with its source and the
+money involved. Point out three things a person would otherwise have to dig for: the resubmitted Summit
+Ridge invoice (a duplicate that must not be paid twice), BrightSpark and Metro invoices that are past the
+**5-business-day recording rule read from the company's own policy**, and the Pioneer invoice that needs
+**director approval** under that policy. On the right, **Deadlines in your documents**: the overdue fire
+door certificate and electrical sign-off, and the lease renewal notice due by 31 December 2028, each with
+the sentence it came from. **Month-end checklist →** opens the printable report. In **Ask**, *What needs my
+attention this week?* answers from the same list (with or without an AI model).
 
 **Overview** tab (opens first): money owed and owing, cash, overdue items, then charts: payables and
 receivables by age, spend by supplier, cash flow from the bank statement, and budget vs. actual with the

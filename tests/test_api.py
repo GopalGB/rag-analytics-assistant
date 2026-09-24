@@ -252,7 +252,7 @@ def test_dashboard(client):
 
 def test_reports_endpoints(client):
     ids = [r["id"] for r in client.get("/reports").json()["reports"]]
-    assert ids == ["accounts", "aging", "outstanding", "project"]
+    assert ids == ["month_end", "accounts", "aging", "outstanding", "project"]
     for rid in ids:
         assert "(DRAFT)" in client.get(f"/reports/{rid}").json()["markdown"]
     assert client.get("/reports/project.html").headers["content-type"].startswith("text/html")
@@ -296,7 +296,7 @@ def test_live_evaluator_against_the_app(client):
     report = ev.evaluate(http, runs=3, cases=cases)
     assert report["failures"] == [], report["failures"]
     assert report["corpus"]["invoices"] >= 8 and report["corpus"]["originals_downloaded"] >= 16
-    assert report["checks"] == {"invoice_lab_flags_problems": True, "dashboard": True,
+    assert report["checks"] == {"invoice_lab_flags_problems": True, "attention_list": True, "dashboard": True,
                                 "project_report_flags_discrepancy": True}
     assert report["latency"]["warm_samples"] >= 1 and ev.percentile([10, 20, 30, 40], 0.95) == 38.5
 
@@ -326,3 +326,12 @@ def test_no_api_response_contains_a_configured_secret(client):
                  "/reports", "/audit", "/examples", "/approvals"):
         body = client.get(path).text
         assert fake not in body and "QQQQQQQQQQ" not in body, path
+
+
+def test_insights_and_deadlines_endpoints(client):
+    a = client.get("/insights").json()
+    assert a["counts"]["critical"] >= 1 and a["items"] and all(i["source"]["name"] for i in a["items"])
+    assert any(i["category"] == "deadline" for i in a["items"])
+    d = client.get("/deadlines").json()
+    assert any(x["file"].endswith("Office_Lease_Summary.docx") for x in d["deadlines"])
+    assert "What needs my attention this week?" in client.get("/examples").json()["examples"]

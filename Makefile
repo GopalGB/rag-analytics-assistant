@@ -14,8 +14,9 @@ test:
 	. .venv/bin/activate && pytest
 	@if command -v node >/dev/null; then node --test tests/*.mjs; else echo "(node not installed: skipped the proxy tests)"; fi
 
-test-js:          ## Cloudflare Worker proxy tests (needs Node 18+)
+test-js:          ## Cloudflare Worker proxy tests + UI syntax check (needs Node 18+)
 	node --test tests/*.mjs
+	node --check app/ui/app.js && node --check app/ui/charts.js
 
 lint:
 	. .venv/bin/activate && ruff check .

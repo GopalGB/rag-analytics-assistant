@@ -27,7 +27,7 @@ from app.agent.memory import ConversationMemory
 from app.agent.tools import ToolBox, cite
 from app.data.store import DataStore
 from app.data.textindex import content_terms, tokenize
-from app.llm.intent import CLASSIFY_SYSTEM, IntentPlan, IntentRouter
+from app.llm.intent import CLASSIFY_SYSTEM, PRIORITY_PATTERN, IntentPlan, IntentRouter
 from app.llm.privacy import DATA_CLASSES, PrivacyDecision, PrivacyGuard, PrivacyPolicy, PrivacyRouter
 from app.llm.providers import BaseLLM, LLMError
 from app.llm.router import ModelRouter, NoModelAvailable
@@ -75,8 +75,10 @@ class AgentEngine:
         router: ModelRouter | None = None,
         intents: IntentRouter | None = None,
         privacy: PrivacyRouter | None = None,
+        insights: Callable[[], dict[str, Any]] | None = None,
     ):
         self.store = store
+        self.insights = insights
         self.retriever = retriever
         self.guard = guard
         self.router = router or ModelRouter.single(llm)
@@ -159,8 +161,34 @@ class AgentEngine:
         )
         return payload
 
+    # ---- "what needs attention?" without a model: the ranked list, straight from the data ---------------
+    def _attention_answer(self, reason: str) -> dict[str, Any]:
+        a = self.insights()
+        top = [i for i in a["items"] if i["severity"] != "info"][:8]
+        c = a["counts"]
+        lines = [f"{reason}, so this list comes straight from your data (no AI involved). "
+                 f"{c['critical']} item(s) to do first and {c['warning']} for this week:"]
+        sources: list[dict[str, Any]] = []
+        for n, i in enumerate(top, 1):
+            s = i["source"]
+            ref = cite(s["name"], s.get("page")) if s.get("type") == "file" else f"table {s['name']}"
+            money = f"${i['amount']:,.2f}" if i["amount"] else ""
+            amount = f" ({money})" if money and money not in i["title"] else ""
+            title = i["title"].rstrip(".")
+            lines.append(f"{n}. {'Do first' if i['severity'] == 'critical' else 'This week'}: {title}{amount}. "
+                         f"{i['detail']} [{ref}]")
+            if s.get("type") == "file" and not any(x["file"] == s["name"] for x in sources):
+                sources.append({"file": s["name"], "page": s.get("page"), "chunk_id": None, "score": None,
+                                "cite": cite(s["name"], s.get("page")), "snippet": i["detail"][:320]})
+        lines.append("The full list, with deadlines and the approval policy applied, is in the Month-end checklist "
+                     "report. Accounting figures are drafts for review by a responsible person.")
+        return {"text": "\n".join(lines), "route": "attention", "sql": None, "columns": [], "rows": [], "row_count": 0,
+                "sources": sources, "actions": []}
+
     # ---- extractive (no model) -------------------------------------------------------
     def _extractive(self, question: str, reason: str) -> dict[str, Any]:
+        if self.insights is not None and re.search(PRIORITY_PATTERN, question, re.I):
+            return self._attention_answer(reason)
         toolbox = ToolBox(self.store, self.retriever)
         hits = self.retriever.search(question, k=5)
         top = hits[0].score if hits else 0.0
@@ -235,7 +263,7 @@ class AgentEngine:
 
         guard = PrivacyGuard(self.privacy.policy)
         toolbox = ToolBox(self.store, self.retriever, max_rows=self.max_sql_rows, approvals=self.approvals,
-                          allowed_tools=plan.tools, privacy=guard)
+                          allowed_tools=plan.tools, privacy=guard, insights=self.insights)
         toolbox.listener = sink
         visible: list = []
         tries = [0]

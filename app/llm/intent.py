@@ -21,6 +21,10 @@ from typing import Any
 
 from app.llm.schemas import RouteDecision
 
+# "What needs my attention?" and similar: answered from the ranked attention list (tool or no-model fallback).
+PRIORITY_PATTERN = (r"\b(needs? (my |our )?attention|what should (i|we) (look at|focus on|do|prioriti[sz]e)|priorit\w*|"
+                    r"to-?do|month[- ]end|checklist|anything (urgent|wrong|odd)|red flags?)\b")
+
 _RULES: dict[str, list[tuple[str, float]]] = {
     "accounting": [
         (r"\b(quickbooks|qbo|ledger|reconcil\w*|payables?|receivables?|a/?p|a/?r)\b", 2.0),
@@ -29,6 +33,7 @@ _RULES: dict[str, list[tuple[str, float]]] = {
         (r"\b(how (much|many)|total|sum|average|count|top \d+|by (supplier|vendor|customer|month))\b", 1.0),
         (r"\b(mismatch\w*|discrepanc\w*|duplicates?|missing from|not recorded)\b", 1.5),
         (r"\binvoices?\b", 0.5),
+        (PRIORITY_PATTERN, 2.5),
     ],
     "drafting": [
         (r"\b(draft|compose|write|prepare|create)\b.{0,40}\b(email|e-mail|letter|reply|response|memo|note|report|"
@@ -47,7 +52,8 @@ _RULES: dict[str, list[tuple[str, float]]] = {
 PIPELINES: dict[str, dict[str, Any]] = {
     "documents": {"tier": "fast", "tools": ("search_docs",), "classes": {"documents"}, "prefetch": True,
                   "instructions": "Answer from the documents and cite each fact as [file, p.N]."},
-    "accounting": {"tier": "strong", "tools": ("run_sql", "search_docs"), "classes": {"accounting", "bank"},
+    "accounting": {"tier": "strong", "tools": ("run_sql", "search_docs", "attention_items"),
+                   "classes": {"accounting", "bank"},
                    "prefetch": True,  # policies and guidance often hold the answer (e.g. record retention)
                    "instructions": "Use run_sql for figures (read-only). Name the table you used. Accounting "
                                    "figures are drafts for review by a responsible person."},
@@ -55,7 +61,8 @@ PIPELINES: dict[str, dict[str, Any]] = {
                  "prefetch": True,
                  "instructions": "Prepare the draft in your answer, then call propose_action so a person can "
                                  "approve it. Nothing is sent or changed without approval."},
-    "general": {"tier": "fast", "tools": ("search_docs", "run_sql"), "classes": {"documents"}, "prefetch": True,
+    "general": {"tier": "fast", "tools": ("search_docs", "run_sql", "attention_items"), "classes": {"documents"},
+                "prefetch": True,
                 "instructions": ""},
 }
 

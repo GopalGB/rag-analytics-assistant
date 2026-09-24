@@ -164,6 +164,7 @@ def health(request: Request) -> dict:
 def examples() -> dict:
     return {
         "examples": [
+            "What needs my attention this week?",
             "What are the payment terms in the Summit Ridge supply agreement?",
             "When does the office lease expire and what notice is needed to renew?",
             "What tasks are outstanding on the Riverside renovation project?",
@@ -398,6 +399,19 @@ def summary_report_md(request: Request) -> PlainTextResponse:
 def dashboard(request: Request) -> dict:
     """KPIs and chart series (aging, spend, cash flow, reconciliation, budget, extraction confidence, models)."""
     return _ws(request).dashboard()
+
+
+@app.get("/insights")
+def get_insights(request: Request) -> dict:
+    """Everything that needs attention, ranked by severity and money involved, each with its source."""
+    return _ws(request).attention()
+
+
+@app.get("/deadlines")
+def get_deadlines(request: Request) -> dict:
+    """Dated obligations read from the documents (renewals, expiries, notices, inspections, milestones)."""
+    a = _ws(request).attention()
+    return {"as_of": a["as_of"], "deadlines": a["deadlines"]}
 
 
 @app.get("/bank-reconciliation")

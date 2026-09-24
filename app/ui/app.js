@@ -107,7 +107,7 @@ function addMsg(role, text, payload) {
   if (role === "user") bubble.textContent = text; else bubble.append(renderAnswer(text));
   const wrap = el("div", { class: "msg " + role }, bubble);
   if (payload) {
-    const routeLabel = { agent: ["AI answer", "ok"], extractive: ["Quoted from sources · no AI", "warn"], refused: ["Refused", "bad"], greeting: ["", ""] }[payload.route] || [payload.route, "info"];
+    const routeLabel = { agent: ["AI answer", "ok"], extractive: ["Quoted from sources · no AI", "warn"], attention: ["Computed from your data · no AI", "info"], refused: ["Refused", "bad"], greeting: ["", ""] }[payload.route] || [payload.route, "info"];
     const meta = el("div", { class: "meta" });
     if (routeLabel[0]) meta.append(el("span", { class: "pill " + routeLabel[1], text: routeLabel[0] }));
     const rt = payload.routing;
@@ -513,7 +513,45 @@ function renderDash(d) {
   Charts.barH($("#ch-conf"), { rows: d.invoice_confidence.slice(0, 12).map((r) => ({ label: `${r.supplier || "Unknown"} ${r.invoice_number || "(no number)"}`, value: r.confidence, note: r.status.replace("_", " ") })),
     format: F.pct, labelName: "Invoice", valueName: "Confidence", empty: "No invoices yet." });
 }
-async function loadOverview() { lastDash = await api("/dashboard"); renderDash(lastDash); }
+const ATTN_SEV = { critical: ["var(--status-critical)", "Do first"], warning: ["var(--status-warning)", "This week"], info: ["var(--muted)", "FYI"] };
+let attentionAll = false;
+function sourceNode(s) {
+  if (s.type === "file") return fileLink(s.name, s.page, fileName(s.name) + (s.page ? `, p.${s.page}` : "") + " ↗");
+  return el("span", { class: "muted", text: "table: " + s.name });
+}
+function renderAttention(a) {
+  const c = a.counts;
+  $("#attention-summary").textContent = `${c.critical} do first · ${c.warning} this week · ${Charts.fmt.money(a.money_at_stake)} in open problems`;
+  const items = attentionAll ? a.items : a.items.filter((i) => i.severity !== "info").slice(0, 8);
+  $("#attention-list").replaceChildren(...items.map((i) => {
+    const [color, label] = ATTN_SEV[i.severity];
+    const dot = el("i"); dot.style.background = color;
+    const meta = el("div", { class: "meta" }, el("span", { class: "muted", text: "Source:" }), sourceNode(i.source));
+    if (i.ask) meta.append(el("button", { type: "button", text: "Ask about this", onclick: () => { show("ask"); ask(i.ask); } }));
+    const TAB_NAMES = { quickbooks: "QuickBooks", invoices: "Invoices", documents: "Documents", reports: "Reports" };
+    if (i.link && TAB_NAMES[i.link]) meta.append(el("button", { type: "button", text: "Open " + TAB_NAMES[i.link], onclick: () => show(i.link) }));
+    return el("li", {}, el("span", { class: "sev" }, dot, label), el("span", { class: "t", text: i.title }),
+      el("span", { class: "amt", text: i.amount ? Charts.fmt.money2(i.amount) : "" }), el("span", { class: "d", text: i.detail }), meta);
+  }));
+  if (!items.length) $("#attention-list").append(el("li", { class: "muted", text: "Nothing needs attention right now." }));
+  const more = $("#attention-more");
+  more.hidden = a.items.length <= items.length && !attentionAll;
+  more.textContent = attentionAll ? "Show fewer" : `Show all ${a.items.length}`;
+  more.onclick = () => { attentionAll = !attentionAll; renderAttention(a); };
+  const tag = { overdue: ["bad", "overdue"], due_soon: ["warn", "due soon"], upcoming: ["info", "upcoming"], later: ["", "later"] };
+  $("#deadline-list").replaceChildren(...(a.deadlines.length ? a.deadlines.map((d) => {
+    const [cls, text] = tag[d.status] || ["", d.status];
+    return el("li", {}, el("span", { class: "when", text: d.date }),
+      el("span", {}, el("span", { class: "pill " + cls, text }), " ", d.text),
+      el("span", { class: "src" }, fileLink(d.file, d.page, fileName(d.file) + (d.page ? `, p.${d.page}` : "") + " ↗")));
+  }) : [el("li", { class: "muted", text: "No dated obligations found in the documents." })]));
+}
+async function loadOverview() {
+  const [dash, attn] = await Promise.all([api("/dashboard"), api("/insights")]);
+  lastDash = dash; renderDash(dash); renderAttention(attn);
+}
+let pendingReport = null;
+$("#attention-report").addEventListener("click", (e) => { e.preventDefault(); pendingReport = "month_end"; show("reports"); });
 loaders.overview = loadOverview;
 let resizeT;
 window.addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(() => { if (lastDash && $("#tab-overview").classList.contains("active")) renderDash(lastDash); }, 150); });
@@ -534,6 +572,7 @@ function renderMarkdown(md, target) {
     else if (line.startsWith("## ")) target.append(el("h2", { text: line.slice(3) }));
     else if (line.startsWith("# ")) target.append(el("h1", { text: line.slice(2) }));
     else if (line.startsWith("> ")) target.append(el("blockquote", {}, renderAnswer(line.slice(2))));
+    else if (line.startsWith("- [ ] ")) target.append(el("div", { style: "padding-left:12px;margin:4px 0" }, "☐ ", renderAnswer(line.slice(6))));
     else if (line.startsWith("- ")) target.append(el("div", { style: "padding-left:12px" }, "• ", renderAnswer(line.slice(2))));
     else if (line.trim()) target.append(el("p", { class: line.startsWith("_") ? "small muted" : "", text: line.replace(/^_|_$/g, "") }));
   }
@@ -560,6 +599,7 @@ async function openReport(id) {
 async function loadReports() {
   const list = (await api("/reports")).reports;
   $("#report-list").replaceChildren(...list.map((r) => el("button", { class: "btn", title: r.description, text: r.title, onclick: () => openReport(r.id) })));
+  if (pendingReport) { const id = pendingReport; pendingReport = null; openReport(id); }
 }
 loaders.reports = loadReports;
 

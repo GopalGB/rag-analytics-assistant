@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 from typing import Literal
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -24,7 +25,7 @@ class Settings(BaseSettings):
     # documents, invoices and spreadsheets to index (scanned recursively); default works from any directory
     data_dir: str = str(_ROOT / "data" / "sample")
     storage_dir: str = "storage"  # local state: database, caches, reviews, approvals, audit log
-    db_path: str = "storage/assistant.duckdb"
+    db_path: str = ""  # default: <STORAGE_DIR>/assistant.duckdb; ":memory:" for an ephemeral database
     upload_subdir: str = "uploads"  # uploads are saved under <data_dir>/<upload_subdir>/
     max_upload_bytes: int = 20 * 1024 * 1024
 
@@ -155,6 +156,12 @@ class Settings(BaseSettings):
     prefetch_passages: int = 4  # top passages handed to the model up front (helps small local models)
     max_sql_rows: int = 200
     history_turns: int = 8
+
+    @model_validator(mode="after")
+    def _default_db_path(self) -> Settings:
+        if not self.db_path:
+            self.db_path = str(Path(self.storage_dir) / "assistant.duckdb")
+        return self
 
     def __repr_args__(self):
         """Never print credentials: any field whose name marks it as a key, secret or token is masked
