@@ -67,6 +67,8 @@ def reconcile(records: list[InvoiceRecord], store: DataStore) -> list[dict[str, 
             "invoice_number": (rec.values.get("invoice_number") if rec else None) or (bill or {}).get("doc_number"),
             "invoice_date": (rec.values.get("invoice_date") if rec else None) or (bill or {}).get("txn_date"),
             "document_total": doc_total,
+            # the invoice's own currency, else the QuickBooks bill's (a bill with no document still has one)
+            "currency": ((rec.values.get("currency") if rec else None) or (bill or {}).get("currency") or None),
             "qbo_bill_id": (bill or {}).get("id"),
             "qbo_total": qbo_total,
             "qbo_balance": float(bill["balance"]) if bill and bill.get("balance") is not None else None,
@@ -132,7 +134,7 @@ def reconcile(records: list[InvoiceRecord], store: DataStore) -> list[dict[str, 
 
 def load_reconciliation(store: DataStore, rows: list[dict[str, Any]]) -> int:
     cols = [
-        "source", "file", "invoice_id", "supplier", "invoice_number", "invoice_date", "document_total",
+        "source", "file", "invoice_id", "supplier", "invoice_number", "invoice_date", "document_total", "currency",
         "qbo_bill_id", "qbo_total", "qbo_balance", "difference", "status", "severity", "detail",
     ]
     df = pd.DataFrame(rows, columns=cols)

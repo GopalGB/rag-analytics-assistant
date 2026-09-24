@@ -125,8 +125,11 @@ def attention(store: DataStore, documents: list, as_of: date) -> dict[str, Any]:
         currency_of = {r["file"]: r["currency"] for r in query(store, "SELECT file, currency FROM invoices")
                        if r["file"] and r["currency"]}
     if "invoice_reconciliation" in tables:
+        rec_cols = {c.lower() for c, _ in store.schema().get("invoice_reconciliation", [])}
+        cur_col = "currency" if "currency" in rec_cols else "NULL AS currency"
         for r in query(store, "SELECT file, supplier, invoice_number, invoice_date, document_total, qbo_total, "
-                              "difference, status, severity, detail FROM invoice_reconciliation WHERE severity <> 'ok'"):
+                              f"difference, {cur_col}, status, severity, detail FROM invoice_reconciliation "
+                              "WHERE severity <> 'ok'"):
             label = _LABELS.get(r["status"], r["status"].replace("_", " "))
             who = f"{r['supplier'] or 'Unknown supplier'} {r['invoice_number'] or ''}".strip()
             amount = abs(r["difference"]) if r["difference"] else (r["document_total"] or r["qbo_total"])
@@ -140,7 +143,8 @@ def attention(store: DataStore, documents: list, as_of: date) -> dict[str, Any]:
                                f"{late} business day(s) past that ({record_rule[1].rsplit('/', 1)[-1]}).")
             items.append(_item(sev, "reconciliation", f"{who}: {label}", detail,
                                {"type": "file" if r["file"] else "table", "name": r["file"] or "qbo_bills"},
-                               amount, f"What should we do about {who}?", "quickbooks", currency_of.get(r["file"])))
+                               amount, f"What should we do about {who}?", "quickbooks",
+                               r["currency"] or currency_of.get(r["file"])))
 
     # 2. invoices awaiting review with problems, and the approval policy
     rules = approval_rules(documents)

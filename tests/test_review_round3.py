@@ -69,6 +69,23 @@ def _store_with_invoices(tmp_path) -> DataStore:
     return store
 
 
+def test_quickbooks_only_items_keep_the_bill_currency(tmp_path):
+    from app.accounting.reconcile import load_reconciliation, reconcile
+
+    store = DataStore(str(tmp_path / "q.duckdb"))
+    store.load_dataframe("qbo_bills", pd.DataFrame([
+        {"id": "9", "doc_number": "GB-7", "vendor_name": "London Ltd", "txn_date": "2026-07-01", "due_date": None,
+         "total": 900.0, "balance": 900.0, "currency": "GBP"}]))
+    rows = reconcile([], store)
+    assert rows[0]["status"] == "no_document" and rows[0]["currency"] == "GBP"
+    load_reconciliation(store, rows)
+    a = insights.attention(store, [], date(2026, 7, 15))
+    item = next(i for i in a["items"] if "London Ltd" in i["title"] and i["category"] == "reconciliation")
+    assert item["currency"] == "GBP"
+    assert a["money_at_stake"] == 0 and a["money_at_stake_other"].get("GBP") == 900.0  # never in the USD total
+    store.close()
+
+
 def test_money_at_stake_is_never_summed_across_currencies(tmp_path):
     store = _store_with_invoices(tmp_path)
     policy = SimpleDoc("documents/policy.md", "- Invoices over $5,000: approved by a director.")
