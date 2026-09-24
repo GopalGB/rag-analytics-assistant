@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Private AI Assistant</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --text: #1b1f24; --muted: #5f6b7a;
+    --border: #dfe3e8; --accent: #2457d6; --accent-ink: #ffffff; --ok: #1a7f4b; --ok-bg: #e6f4ec;
+    --warn: #9a6200; --warn-bg: #fff4dc; --bad: #b42318; --bad-bg: #fdecea; --info-bg: #eaf0fd;
+    --shadow: 0 1px 2px rgba(16,24,40,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --panel: #171a21; --panel-2: #1f2430; --text: #e8eaed; --muted: #9aa3b2;
+      --border: #2a2f3a; --accent: #6ea8fe; --accent-ink: #0b0d11; --ok: #4ade80; --ok-bg: #13291d;
+      --warn: #fbbf24; --warn-bg: #2d2412; --bad: #f87171; --bad-bg: #2f1716; --info-bg: #17223a;
+      --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+         background: var(--bg); color: var(--text); display: flex; flex-direction: column; }
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 18px; border-bottom: 1px solid var(--border);
+           background: var(--panel); flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 99px; background: var(--panel-2); color: var(--muted);
+           border: 1px solid var(--border); white-space: nowrap; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; align-items: center; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 99px; border: 1px solid var(--border); background: var(--panel-2); white-space: nowrap; }
+  .chip.ok { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
+  .chip.warn { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
+  .chip.bad { background: var(--bad-bg); color: var(--bad); border-color: transparent; }
+  .who input { width: 130px; padding: 4px 8px; font-size: 12px; }
+  .layout { flex: 1; display: flex; min-height: 0; }
+  nav { width: 200px; border-right: 1px solid var(--border); background: var(--panel); padding: 12px 8px; display: flex; flex-direction: column; gap: 2px; }
+  nav button { text-align: left; background: none; color: var(--text); border: 0; padding: 9px 12px; border-radius: 8px; font-size: 14px; cursor: pointer; display: flex; justify-content: space-between; }
+  nav button:hover { background: var(--panel-2); }
+  nav button.active { background: var(--info-bg); color: var(--accent); font-weight: 600; }
+  nav .count { font-size: 11px; background: var(--bad); color: #fff; border-radius: 99px; padding: 0 7px; }
+  nav .foot { margin-top: auto; font-size: 11px; color: var(--muted); padding: 8px 12px; }
+  main { flex: 1; overflow-y: auto; padding: 20px 24px; min-width: 0; }
+  section { display: none; max-width: 1100px; margin: 0 auto; }
+  section.active { display: block; }
+  h2 { font-size: 18px; margin: 0 0 4px; } .sub { color: var(--muted); margin: 0 0 16px; }
+  h3 { font-size: 15px; margin: 18px 0 8px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; box-shadow: var(--shadow); margin-bottom: 14px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  button.btn { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; font-size: 13px; font-weight: 550; }
+  button.btn:hover { background: var(--panel-2); }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+  button.primary:hover { filter: brightness(1.05); background: var(--accent); }
+  button.good { background: var(--ok); color: #fff; border-color: transparent; }
+  button.danger { color: var(--bad); }
+  button:disabled { opacity: .5; cursor: default; }
+  input, select, textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--text); font: inherit; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; background: var(--panel-2); position: sticky; top: 0; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.click { cursor: pointer; } tr.click:hover td { background: var(--panel-2); }
+  tr.sel td { background: var(--info-bg); }
+  .table-wrap { overflow-x: auto; }
+  a { color: var(--accent); }
+  .pill { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 99px; white-space: nowrap; background: var(--panel-2); color: var(--muted); }
+  .pill.ok { background: var(--ok-bg); color: var(--ok); } .pill.warn { background: var(--warn-bg); color: var(--warn); }
+  .pill.bad { background: var(--bad-bg); color: var(--bad); } .pill.info { background: var(--info-bg); color: var(--accent); }
+  .muted { color: var(--muted); } .small { font-size: 12px; }
+  .conf { display: inline-flex; align-items: center; gap: 6px; }
+  .conf .bar { width: 50px; height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; border: 1px solid var(--border); }
+  .conf .bar i { display: block; height: 100%; }
+  /* chat */
+  #log { display: flex; flex-direction: column; gap: 14px; margin-bottom: 14px; }
+  .msg { max-width: 100%; }
+  .msg.user .bubble { background: var(--accent); color: var(--accent-ink); margin-left: auto; max-width: 75%; border-radius: 14px 14px 4px 14px; }
+  .msg.bot .bubble { background: var(--panel); border: 1px solid var(--border); border-radius: 14px 14px 14px 4px; }
+  .msg.refused .bubble { border-color: var(--bad); }
+  .bubble { padding: 12px 14px; width: fit-content; white-space: pre-wrap; word-wrap: break-word; }
+  .msg .meta { font-size: 11px; color: var(--muted); margin: 4px 2px; display: flex; gap: 8px; align-items: center; }
+  .cite { background: var(--info-bg); color: var(--accent); border-radius: 4px; padding: 0 4px; font-size: 12px; }
+  .sources { margin-top: 8px; display: grid; gap: 6px; }
+  .source { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--panel); font-size: 12px; }
+  .source a { color: var(--accent); font-weight: 600; text-decoration: none; }
+  .source .snip { color: var(--muted); margin-top: 3px; }
+  details { margin-top: 8px; } summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  pre { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px; overflow-x: auto; font-size: 12px; white-space: pre-wrap; }
+  #ask-form { display: flex; gap: 8px; position: sticky; bottom: 0; background: var(--bg); padding: 10px 0; }
+  #q { flex: 1; padding: 12px 14px; border-radius: 10px; font-size: 14px; }
+  .examples { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .examples button { font-size: 12px; padding: 5px 10px; border-radius: 99px; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; }
+  .examples button:hover { border-color: var(--accent); color: var(--accent); }
+  /* upload */
+  .drop { border: 2px dashed var(--border); border-radius: 12px; padding: 22px; text-align: center; color: var(--muted); cursor: pointer; }
+  .drop.over { border-color: var(--accent); background: var(--info-bg); }
+  .fields { display: grid; grid-template-columns: 150px 1fr 110px; gap: 6px 10px; align-items: center; }
+  .fields .ev { grid-column: 2 / 4; font-size: 11px; color: var(--muted); margin-top: -4px; }
+  .issues { margin: 8px 0; padding-left: 18px; } .issues li { margin: 3px 0; }
+  .note { background: var(--info-bg); border-radius: 8px; padding: 10px 12px; font-size: 13px; }
+  .warnbox { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 10px 12px; font-size: 13px; }
+  .md h1 { font-size: 16px; } .md h2 { font-size: 14px; margin: 12px 0 4px; } .md ul { margin: 4px 0; padding-left: 20px; }
+  .toast { position: fixed; bottom: 18px; right: 18px; background: var(--text); color: var(--bg); padding: 10px 14px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 360px; }
+  .toast.show { opacity: .95; }
+  @media (max-width: 800px) {
+    .layout { flex-direction: column; }
+    nav { width: auto; flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border); padding: 6px; }
+    nav button { white-space: nowrap; } nav .foot { display: none; }
+    main { padding: 14px 16px; } .grid2 { grid-template-columns: 1fr; }
+    .fields { grid-template-columns: 110px 1fr; } .fields .confcell { display: none; } .fields .ev { grid-column: 2; }
+    .chips { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="app-name">Private AI Assistant</h1>
+  <span class="badge">Prototype · synthetic data</span>
+  <div class="chips">
+    <span class="chip" id="chip-llm">AI: …</span>
+    <span class="chip" id="chip-ocr">OCR: …</span>
+    <span class="chip" id="chip-qbo">QuickBooks: …</span>
+    <span class="chip" id="chip-docs">…</span>
+    <label class="who small muted">You: <input id="who" placeholder="your name" maxlength="60" /></label>
+  </div>
+</header>
+<div class="layout">
+  <nav id="nav">
+    <button data-tab="ask" class="active">Ask</button>
+    <button data-tab="documents">Documents</button>
+    <button data-tab="invoices">Invoices <span class="count" id="n-review" hidden></span></button>
+    <button data-tab="quickbooks">QuickBooks</button>
+    <button data-tab="approvals">Approvals <span class="count" id="n-approvals" hidden></span></button>
+    <button data-tab="activity">Activity log</button>
+    <button data-tab="privacy">Privacy &amp; security</button>
+    <div class="foot">Runs locally. External actions need your approval.</div>
+  </nav>
+  <main>
+    <!-- ASK -->
+    <section id="tab-ask" class="active">
+      <h2>Ask your documents and accounts</h2>
+      <p class="sub">Answers cite the source document and page. If something isn't in your data, the assistant says so instead of guessing.</p>
+      <div class="examples" id="examples"></div>
+      <div id="log"></div>
+      <form id="ask-form">
+        <input id="q" placeholder="e.g. When does the office lease expire?" autocomplete="off" />
+        <button class="btn primary" id="send" type="submit">Ask</button>
+      </form>
+    </section>
+
+    <!-- DOCUMENTS -->
+    <section id="tab-documents">
+      <h2>Documents</h2>
+      <p class="sub">Add PDFs (including scans), Word files, images, spreadsheets or invoices. They're read, OCR'd if needed and indexed on this machine.</p>
+      <div class="card">
+        <div class="drop" id="drop">
+          <strong>Drop files here</strong> or click to choose<br />
+          <span class="small">PDF · scanned PDF · DOCX · TXT/MD · PNG/JPG · CSV/XLSX</span>
+        </div>
+        <input type="file" id="file" multiple hidden />
+        <div class="row" style="margin-top:10px">
+          <label class="small muted">Treat as
+            <select id="kind"><option value="auto">Detect automatically</option><option value="invoice">Invoice</option><option value="document">Document</option><option value="table">Spreadsheet</option></select>
+          </label>
+          <button class="btn" id="reindex">Re-scan data folder</button>
+          <span class="small muted" id="reindex-note"></span>
+        </div>
+        <div id="upload-results"></div>
+      </div>
+      <div class="card"><div class="table-wrap"><table id="doc-table"></table></div></div>
+    </section>
+
+    <!-- INVOICES -->
+    <section id="tab-invoices">
+      <h2>Invoices</h2>
+      <p class="sub">Key details extracted from supplier invoices. Every extraction is a draft until a person reviews it; missing or uncertain values are flagged, never invented.</p>
+      <div class="row" style="margin-bottom:10px">
+        <select id="inv-filter"><option value="">All</option><option value="needs_review">Needs review</option><option value="flagged">Has issues</option><option value="approved">Approved</option><option value="rejected">Rejected</option></select>
+        <a class="btn" href="/invoices/export.csv" style="text-decoration:none" id="export">Export CSV</a>
+      </div>
+      <div class="card"><div class="table-wrap"><table id="inv-table"></table></div></div>
+      <div class="card" id="inv-detail" hidden></div>
+    </section>
+
+    <!-- QUICKBOOKS -->
+    <section id="tab-quickbooks">
+      <h2>QuickBooks <span class="pill info">read-only</span></h2>
+      <p class="sub">Retrieves data from a QuickBooks test company and checks it against the invoices on file. Nothing is ever written to QuickBooks.</p>
+      <div class="card" id="qbo-card"></div>
+      <h3>Invoices vs QuickBooks</h3>
+      <div class="card"><div class="table-wrap"><table id="recon-table"></table></div></div>
+      <div class="grid2">
+        <div class="card">
+          <div class="row" style="justify-content:space-between"><h3 style="margin:0">Accounts summary (draft)</h3>
+            <a class="btn" href="/reports/summary.md" style="text-decoration:none">Download</a></div>
+          <div class="md" id="summary"></div>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">Open bills</h3>
+          <div class="table-wrap"><table id="bills-table"></table></div>
+          <h3>Customer invoices (receivables)</h3>
+          <div class="table-wrap"><table id="ar-table"></table></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- APPROVALS -->
+    <section id="tab-approvals">
+      <h2>Approvals</h2>
+      <p class="sub">Sending emails, recording bills or any other external action is only proposed here. A named person approves or rejects it. In this prototype approved actions are logged but <strong>not executed</strong>.</p>
+      <div id="approval-list"></div>
+    </section>
+
+    <!-- ACTIVITY -->
+    <section id="tab-activity">
+      <h2>Activity log</h2>
+      <p class="sub">Every question, upload, review, QuickBooks sync and approval, in a tamper-evident log stored on this machine.</p>
+      <div class="row" style="margin-bottom:10px"><span id="integrity"></span><button class="btn" id="audit-refresh">Refresh</button></div>
+      <div class="card"><div class="table-wrap"><table id="audit-table"></table></div></div>
+    </section>
+
+    <!-- PRIVACY -->
+    <section id="tab-privacy">
+      <h2>Privacy &amp; security</h2>
+      <p class="sub">What runs where, and what (if anything) leaves this machine, based on the current settings.</p>
+      <div class="card"><div id="model-note" class="note"></div></div>
+      <div class="card"><div class="table-wrap"><table id="privacy-table"></table></div></div>
+      <div class="card"><h3 style="margin-top:0">Controls in place</h3><ul id="controls"></ul></div>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const sessionId = (() => { try { let id = localStorage.getItem("session_id"); if (!id) { id = "s-" + Math.random().toString(36).slice(2); localStorage.setItem("session_id", id); } return id; } catch { return "s-" + Math.random().toString(36).slice(2); } })();
+const who = $("#who");
+try { who.value = localStorage.getItem("who") || ""; } catch {}
+who.addEventListener("change", () => { try { localStorage.setItem("who", who.value.trim()); } catch {} });
+
+function el(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v; else if (k === "text") e.textContent = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v); else if (v !== undefined && v !== null && v !== false) e.setAttribute(k, v);
+  }
+  for (const kid of kids.flat()) if (kid !== null && kid !== undefined) e.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+  return e;
+}
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 3200); }
+function headers(json = true) { const h = { "X-User": who.value.trim() }; if (json) h["Content-Type"] = "application/json"; return h; }
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { ...headers(!(opts.body instanceof FormData)), ...(opts.headers || {}) } });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.detail || body.error || r.statusText);
+  return body;
+}
+const money = (v) => v === null || v === undefined || v === "" ? "—" : Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fileName = (f) => (f || "").split("/").pop();
+function fileLink(file, page, label) {
+  const href = "/files/" + file.split("/").map(encodeURIComponent).join("/") + (page ? "#page=" + page : "");
+  return el("a", { href, target: "_blank", rel: "noopener", text: label || fileName(file) });
+}
+function confBar(c) {
+  const pct = Math.round((c || 0) * 100);
+  const color = c >= 0.85 ? "var(--ok)" : c >= 0.6 ? "var(--warn)" : "var(--bad)";
+  const bar = el("span", { class: "bar" }, el("i", { style: `width:${pct}%;background:${color}` }));
+  return el("span", { class: "conf" }, bar, el("span", { class: "small muted", text: pct + "%" }));
+}
+function reviewer() {
+  const name = who.value.trim();
+  if (!name) { toast("Enter your name (top right) first — reviews and approvals are recorded against it."); who.focus(); }
+  return name;
+}
+function table(tbl, cols, rows, onClick, selId) {
+  tbl.replaceChildren();
+  tbl.append(el("tr", {}, cols.map((c) => el("th", { class: c.num ? "num" : "", text: c.label }))));
+  if (!rows.length) { tbl.append(el("tr", {}, el("td", { colspan: cols.length, class: "muted", text: "Nothing here yet." }))); return; }
+  for (const r of rows) {
+    const tr = el("tr", { class: (onClick ? "click " : "") + (selId && r.id === selId ? "sel" : "") }, cols.map((c) => {
+      const v = c.render ? c.render(r) : r[c.key];
+      return el("td", { class: c.num ? "num" : "" }, v instanceof Node ? v : (v === null || v === undefined ? "—" : String(v)));
+    }));
+    if (onClick) tr.addEventListener("click", () => onClick(r));
+    tbl.append(tr);
+  }
+}
+
+// ---------------- tabs
+const loaders = {};
+function show(tab) {
+  document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+  document.querySelectorAll("main section").forEach((s) => s.classList.toggle("active", s.id === "tab-" + tab));
+  if (location.hash !== "#" + tab) history.replaceState(null, "", "#" + tab);
+  loaders[tab] && loaders[tab]();
+}
+document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => show(b.dataset.tab)));
+
+// ---------------- header status
+async function refreshHealth() {
+  try {
+    const h = await api("/health");
+    $("#app-name").textContent = h.app_name;
+    const llm = $("#chip-llm");
+    llm.textContent = h.llm_enabled ? `AI: ${h.llm} (${h.llm_local ? "local" : "cloud"})` : "AI: off · quoting sources only";
+    llm.className = "chip " + (h.llm_enabled ? (h.llm_local ? "ok" : "warn") : "warn");
+    llm.title = h.llm_note || "";
+    const ocr = $("#chip-ocr"); ocr.textContent = "OCR: " + h.ocr; ocr.className = "chip " + (h.ocr.startsWith("tesseract") ? "ok" : "warn");
+    const q = $("#chip-qbo"); const qb = h.qbo;
+    q.textContent = `QuickBooks: ${qb.mode === "mock" ? "test company (offline)" : qb.mode}${qb.connected ? "" : " · not connected"}`;
+    q.className = "chip " + (qb.connected ? "ok" : "warn");
+    $("#chip-docs").textContent = `${h.documents} docs · ${h.invoices} invoices`;
+    const ap = $("#n-approvals"); ap.hidden = !h.pending_approvals; ap.textContent = h.pending_approvals;
+  } catch { $("#chip-llm").textContent = "server unreachable"; }
+}
+
+// ---------------- ASK
+function renderAnswer(text) {
+  // Escape-first, then highlight [citations] and **bold**. Never injects raw HTML.
+  const frag = document.createDocumentFragment();
+  const parts = String(text).split(/(\[[^\]\n]{2,120}\]|\*\*[^*\n]+\*\*)/g);
+  for (const p of parts) {
+    if (/^\[[^\]]+\]$/.test(p)) frag.append(el("span", { class: "cite", text: p.slice(1, -1) }));
+    else if (/^\*\*[^*]+\*\*$/.test(p)) frag.append(el("strong", { text: p.slice(2, -2) }));
+    else frag.append(p);
+  }
+  return frag;
+}
+function addMsg(role, text, payload) {
+  const bubble = el("div", { class: "bubble" });
+  if (role === "user") bubble.textContent = text; else bubble.append(renderAnswer(text));
+  const wrap = el("div", { class: "msg " + role }, bubble);
+  if (payload) {
+    const routeLabel = { agent: ["AI answer", "ok"], extractive: ["Quoted from sources · no AI", "warn"], refused: ["Refused", "bad"], greeting: ["", ""] }[payload.route] || [payload.route, "info"];
+    if (routeLabel[0]) wrap.append(el("div", { class: "meta" }, el("span", { class: "pill " + routeLabel[1], text: routeLabel[0] })));
+    if (payload.sources && payload.sources.length) {
+      const box = el("div", { class: "sources" });
+      payload.sources.slice(0, 6).forEach((s) => box.append(el("div", { class: "source" },
+        fileLink(s.file, s.page, s.cite), el("span", { class: "muted small", text: "  " + s.file }),
+        el("div", { class: "snip", text: (s.snippet || "").slice(0, 260) + "…" }))));
+      wrap.append(el("details", { open: "" }, el("summary", { text: `Sources (${payload.sources.length})` }), box));
+    }
+    if (payload.actions && payload.actions.length) {
+      payload.actions.forEach((a) => wrap.append(el("div", { class: "note", style: "margin-top:8px" },
+        `Queued for approval: ${a.title} — nothing has been sent. `, el("a", { href: "#approvals", onclick: () => show("approvals"), text: "Review" }))));
+    }
+    if (payload.sql) {
+      const d = el("details", {}, el("summary", { text: `Data used (${payload.row_count} rows)` }), el("pre", { text: payload.sql }));
+      if (payload.rows && payload.rows.length) {
+        const t = el("table"); const cols = payload.columns.map((c) => ({ key: c, label: c }));
+        table(t, cols, payload.rows.slice(0, 20)); d.append(el("div", { class: "table-wrap" }, t));
+      }
+      wrap.append(d);
+    }
+  }
+  $("#log").append(wrap);
+  wrap.scrollIntoView({ behavior: "smooth", block: "end" });
+  return wrap;
+}
+async function ask(question) {
+  if (!question) return;
+  $("#q").value = ""; $("#send").disabled = true;
+  addMsg("user", question);
+  const thinking = addMsg("bot", "Thinking…");
+  try {
+    const p = await api("/chat", { method: "POST", body: JSON.stringify({ question, session_id: sessionId }) });
+    thinking.remove(); addMsg(p.route === "refused" ? "bot refused" : "bot", p.text || "(no answer)", p);
+    if (p.actions && p.actions.length) refreshHealth();
+  } catch (e) { thinking.remove(); addMsg("bot", "Something went wrong: " + e.message); }
+  finally { $("#send").disabled = false; $("#q").focus(); }
+}
+$("#ask-form").addEventListener("submit", (e) => { e.preventDefault(); ask($("#q").value.trim()); });
+(async () => { try { const ex = await api("/examples"); ex.examples.forEach((q) => $("#examples").append(el("button", { type: "button", text: q, onclick: () => ask(q) }))); } catch {} })();
+
+// ---------------- DOCUMENTS
+async function loadDocs() {
+  const d = await api("/documents");
+  table($("#doc-table"), [
+    { label: "File", render: (r) => r.type === "table" ? el("span", { text: r.file + " (SQL table)" }) : fileLink(r.file, null, r.file) },
+    { label: "Kind", render: (r) => el("span", { class: "pill " + (r.category === "invoice" ? "info" : r.category === "spreadsheet" ? "ok" : ""), text: r.category }) },
+    { label: "Pages / rows", num: true, render: (r) => r.type === "table" ? `${r.rows} rows` : r.pages },
+    { label: "Read by", render: (r) => r.type === "table" ? "spreadsheet" : (r.ocr_pages.length ? el("span", { class: "pill warn", text: "OCR (scan)" }) : "text layer") },
+    { label: "Warnings", render: (r) => r.warnings.length ? el("span", { class: "pill bad", text: r.warnings.join(" ") }) : "" },
+  ], d.documents);
+}
+loaders.documents = loadDocs;
+const drop = $("#drop"), fileInput = $("#file");
+drop.addEventListener("click", () => fileInput.click());
+drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); uploadFiles(e.dataTransfer.files); });
+fileInput.addEventListener("change", () => { uploadFiles(fileInput.files); fileInput.value = ""; });
+async function uploadFiles(files) {
+  const out = $("#upload-results");
+  for (const f of files) {
+    const card = el("div", { class: "note", style: "margin-top:10px" }, `Processing ${f.name}…`);
+    out.prepend(card);
+    const fd = new FormData(); fd.append("file", f); fd.append("kind", $("#kind").value);
+    try {
+      const r = await api("/upload", { method: "POST", body: fd });
+      card.replaceChildren(el("strong", { text: fileName(r.file) }), ` — saved and indexed as ${r.classified_as}${r.ocr ? " (read with OCR)" : ""}. `);
+      if (r.warnings.length) card.append(el("div", { class: "warnbox", style: "margin-top:6px", text: r.warnings.join(" ") }));
+      if (r.invoice) {
+        const i = r.invoice;
+        card.append(el("div", { class: "small", style: "margin-top:6px" },
+          `Supplier: ${i.supplier ?? "MISSING"} · No: ${i.invoice_number ?? "MISSING"} · Date: ${i.invoice_date ?? "MISSING"} · Total: ${money(i.total)} `,
+          confBar(i.confidence), " ", el("a", { href: "#invoices", onclick: () => { show("invoices"); openInvoice(i.id); }, text: "Review →" })));
+        if (i.issues.length) card.append(el("ul", { class: "issues small" }, i.issues.map((x) => el("li", { text: x }))));
+      }
+    } catch (e) { card.className = "warnbox"; card.style.marginTop = "10px"; card.textContent = `${f.name}: ${e.message}`; }
+  }
+  loadDocs(); refreshHealth(); loadInvoices().catch(() => {});
+}
+$("#reindex").addEventListener("click", async () => {
+  const r = await api("/refresh", { method: "POST" });
+  $("#reindex-note").textContent = `${r.documents} documents, ${r.doc_chunks} passages, ${r.invoices} invoices indexed.`;
+  loadDocs(); refreshHealth();
+});
+
+// ---------------- INVOICES
+let invoices = [], selectedInvoice = null;
+const statusPill = (s) => el("span", { class: "pill " + ({ approved: "ok", rejected: "bad", needs_review: "warn" }[s] || ""), text: s.replace("_", " ") });
+async function loadInvoices() {
+  invoices = (await api("/invoices")).invoices;
+  const n = invoices.filter((i) => i.status === "needs_review").length;
+  const badge = $("#n-review"); badge.hidden = !n; badge.textContent = n;
+  const f = $("#inv-filter").value;
+  const rows = invoices.filter((i) => !f || (f === "flagged" ? i.issues.length : i.status === f));
+  table($("#inv-table"), [
+    { label: "Status", render: (r) => statusPill(r.status) },
+    { label: "Supplier", render: (r) => r.supplier ?? el("span", { class: "pill bad", text: "missing" }) },
+    { label: "Invoice no.", render: (r) => r.invoice_number ?? el("span", { class: "pill bad", text: "missing" }) },
+    { label: "Date", render: (r) => r.invoice_date ?? el("span", { class: "pill bad", text: "missing" }) },
+    { label: "Total", num: true, render: (r) => r.total === null ? el("span", { class: "pill bad", text: "missing" }) : money(r.total) },
+    { label: "Confidence", render: (r) => confBar(r.confidence) },
+    { label: "Issues", render: (r) => r.issues.length ? el("span", { class: "pill warn", text: r.issues.length + (r.duplicate_of ? " · duplicate" : "") }) : el("span", { class: "pill ok", text: "none" }) },
+    { label: "File", render: (r) => el("span", { class: "small muted", text: fileName(r.file) + (r.ocr ? " (OCR)" : "") }) },
+  ], rows, (r) => openInvoice(r.id), selectedInvoice);
+  if (selectedInvoice) openInvoice(selectedInvoice, false);
+}
+loaders.invoices = loadInvoices;
+$("#inv-filter").addEventListener("change", loadInvoices);
+const FIELD_LABELS = { supplier: "Supplier", invoice_number: "Invoice number", invoice_date: "Invoice date", due_date: "Due date", po_number: "PO number", currency: "Currency", subtotal: "Subtotal", tax: "Tax", total: "Total" };
+function openInvoice(id, scroll = true) {
+  const inv = invoices.find((i) => i.id === id); if (!inv) return;
+  selectedInvoice = id;
+  document.querySelectorAll("#inv-table tr").forEach((tr) => tr.classList.remove("sel"));
+  const box = $("#inv-detail"); box.hidden = false; box.replaceChildren();
+  box.append(el("div", { class: "row", style: "justify-content:space-between" },
+    el("h3", { style: "margin:0", text: `${inv.supplier ?? "Unknown supplier"} — ${inv.invoice_number ?? "no number"}` }),
+    el("div", { class: "row" }, statusPill(inv.status), fileLink(inv.file, null, "Open original ↗"))));
+  box.append(el("p", { class: "small muted", text: `Extracted by ${inv.method === "rules+ai" ? "rules + AI (AI values accepted only if printed on the document)" : "local rules"}${inv.ocr ? ", from a scanned image via OCR" : ""}.${inv.reviewed_by ? ` Last reviewed by ${inv.reviewed_by} at ${inv.reviewed_at}.` : ""}` }));
+  if (inv.issues.length) box.append(el("div", { class: "warnbox" }, el("strong", { text: "Check before approving:" }), el("ul", { class: "issues" }, inv.issues.map((x) => el("li", { text: x })))));
+  const grid = el("div", { class: "fields", style: "margin-top:12px" });
+  const inputs = {};
+  for (const [k, label] of Object.entries(FIELD_LABELS)) {
+    const v = inv[k];
+    const inp = el("input", { value: v ?? "", placeholder: v === null ? "not found — enter if known" : "" });
+    if (v === null && ["supplier", "invoice_number", "invoice_date", "total"].includes(k)) inp.style.borderColor = "var(--bad)";
+    inputs[k] = inp;
+    const required = ["supplier", "invoice_number", "invoice_date", "total"].includes(k);
+    grid.append(el("label", { class: "small", text: label }), inp, el("span", { class: "confcell" }, v === null ? el("span", { class: "pill " + (required ? "bad" : ""), text: required ? "missing" : "not on document" }) : confBar(inv.field_confidence[k])));
+    const ev = [inv.field_notes[k], inv.field_evidence[k] ? `from: “${inv.field_evidence[k].slice(0, 90)}”` : ""].filter(Boolean).join(" · ");
+    if (ev) grid.append(el("div", { class: "ev", text: ev }));
+  }
+  box.append(grid);
+  const note = el("input", { placeholder: "Review note (optional)", style: "flex:1;min-width:200px" });
+  const send = async (status) => {
+    const name = reviewer(); if (!name) return;
+    const corrections = {};
+    for (const [k, inp] of Object.entries(inputs)) { const orig = inv[k] ?? ""; if (inp.value.trim() !== String(orig)) corrections[k] = inp.value.trim(); }
+    try {
+      await api(`/invoices/${id}/review`, { method: "POST", body: JSON.stringify({ status, reviewer: name, note: note.value, corrections }) });
+      toast(`Invoice ${status.replace("_", " ")}${Object.keys(corrections).length ? " with corrections" : ""}. Logged.`);
+      loadInvoices();
+    } catch (e) { toast(e.message); }
+  };
+  box.append(el("div", { class: "row", style: "margin-top:14px" }, note,
+    el("button", { class: "btn", text: "Save corrections", onclick: () => send("needs_review") }),
+    el("button", { class: "btn danger", text: "Reject", onclick: () => send("rejected") }),
+    el("button", { class: "btn good", text: "Approve", onclick: () => send("approved") })));
+  if (scroll) box.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// ---------------- QUICKBOOKS
+const SEV = { issue: "bad", warning: "warn", ok: "ok" };
+async function loadQbo() {
+  const s = await api("/qbo/status");
+  const card = $("#qbo-card"); card.replaceChildren();
+  const modeText = s.mode === "mock" ? "Offline test company (bundled fixture in QuickBooks API format)" : s.mode === "off" ? "Disabled" : `Intuit ${s.mode} company`;
+  card.append(el("div", { class: "row", style: "justify-content:space-between" },
+    el("div", {}, el("strong", { text: s.company || (s.connected ? "Connected" : "Not connected") }),
+      el("div", { class: "small muted", text: `${modeText}${s.last_sync ? " · last synced " + s.last_sync : ""}` })),
+    el("div", { class: "row" },
+      s.mode === "sandbox" && !s.connected ? el("a", { class: "btn primary", href: "/qbo/connect", style: "text-decoration:none", text: "Connect sandbox company" }) : null,
+      s.connected ? el("button", { class: "btn primary", text: "Sync now", onclick: async () => { try { const r = await api("/qbo/sync", { method: "POST" }); toast(`Synced (read-only): ${Object.entries(r.counts).map(([k, v]) => `${v} ${k.replace("qbo_", "")}`).join(", ")}`); loadQbo(); refreshHealth(); } catch (e) { toast(e.message); } } }) : null,
+      s.connected ? el("button", { class: "btn danger", text: s.mode === "mock" ? "Remove local copy" : "Disconnect & revoke", onclick: async () => { if (!confirm("Revoke access and delete the local QuickBooks copy?")) return; await api("/qbo/disconnect", { method: "POST" }); toast("Disconnected; local copy deleted."); loadQbo(); } }) : null)));
+  if (s.mode === "sandbox" && s.configured === false) card.append(el("div", { class: "warnbox", style: "margin-top:10px", text: "Set QBO_CLIENT_ID and QBO_CLIENT_SECRET from an Intuit developer sandbox app, then restart. See docs/QUICKBOOKS.md." }));
+
+  const recon = (await api("/reconciliation")).rows;
+  table($("#recon-table"), [
+    { label: "Result", render: (r) => el("span", { class: "pill " + SEV[r.severity], text: r.status.replaceAll("_", " ") }) },
+    { label: "Supplier", key: "supplier" },
+    { label: "Invoice no.", key: "invoice_number" },
+    { label: "Document", num: true, render: (r) => money(r.document_total) },
+    { label: "QuickBooks", num: true, render: (r) => money(r.qbo_total) },
+    { label: "Detail", render: (r) => el("span", { class: "small", text: r.detail }) },
+    { label: "", render: (r) => {
+      if (r.status === "not_in_quickbooks") return el("button", { class: "btn", text: "Propose: record bill", onclick: (e) => { e.stopPropagation(); proposeBill(r); } });
+      if (r.status === "amount_mismatch") return el("button", { class: "btn", text: "Propose: query supplier", onclick: (e) => { e.stopPropagation(); proposeMismatch(r); } });
+      return r.file ? fileLink(r.file, null, "open") : "";
+    } },
+  ], recon);
+
+  const sum = await api("/reports/summary");
+  const md = $("#summary"); md.replaceChildren();
+  sum.markdown.split("\n").forEach((line) => {
+    if (line.startsWith("# ")) md.append(el("h1", { text: line.slice(2) }));
+    else if (line.startsWith("## ")) md.append(el("h2", { text: line.slice(3) }));
+    else if (/^\s*- /.test(line)) md.append(el("div", { style: `padding-left:${line.startsWith("  ") ? 26 : 12}px` }, "• ", renderAnswer(line.replace(/^\s*- /, ""))));
+    else if (line.trim()) md.append(el("p", { class: "small muted", text: line.replaceAll("_", "") }));
+  });
+  const data = await api("/qbo/data");
+  table($("#bills-table"), [
+    { label: "Vendor", key: "vendor_name" }, { label: "No.", key: "doc_number" }, { label: "Due", key: "due_date" },
+    { label: "Balance", num: true, render: (r) => money(r.balance) },
+    { label: "", render: (r) => r.days_overdue ? el("span", { class: "pill bad", text: r.days_overdue + "d overdue" }) : "" },
+  ], (data.bills || []).filter((b) => b.balance > 0));
+  table($("#ar-table"), [
+    { label: "Customer", key: "customer_name" }, { label: "No.", key: "doc_number" },
+    { label: "Balance", num: true, render: (r) => money(r.balance) },
+    { label: "", render: (r) => r.days_overdue ? el("span", { class: "pill bad", text: r.days_overdue + "d overdue" }) : el("span", { class: "pill ok", text: r.balance ? "open" : "paid" }) },
+  ], data.invoices || []);
+}
+loaders.quickbooks = loadQbo;
+async function proposeBill(r) {
+  const details = `Record a bill in QuickBooks:\n  Vendor: ${r.supplier}\n  Bill no.: ${r.invoice_number}\n  Date: ${r.invoice_date}\n  Amount: ${money(r.document_total)}\n  Source document: ${r.file}\n\nCheck the invoice is approved under the expense policy before recording.`;
+  await api("/approvals", { method: "POST", body: JSON.stringify({ action_type: "record_bill", title: `Record ${r.supplier} ${r.invoice_number} (${money(r.document_total)}) in QuickBooks`, details, dedupe_key: "bill:" + r.invoice_id }) });
+  toast("Proposed. It now waits in Approvals — nothing was written to QuickBooks."); refreshHealth();
+}
+async function proposeMismatch(r) {
+  const details = `Draft email to ${r.supplier}:\n\nHello,\n\nWe are reconciling invoice ${r.invoice_number}. Your invoice shows ${money(r.document_total)} while our records show ${money(r.qbo_total)}. Could you please confirm the correct amount?\n\nThank you.`;
+  await api("/approvals", { method: "POST", body: JSON.stringify({ action_type: "draft_email", title: `Ask ${r.supplier} to confirm invoice ${r.invoice_number} amount`, details, dedupe_key: "mismatch:" + r.invoice_id }) });
+  toast("Draft email queued for approval. Nothing was sent."); refreshHealth();
+}
+
+// ---------------- APPROVALS
+async function loadApprovals() {
+  const items = (await api("/approvals")).items;
+  const box = $("#approval-list"); box.replaceChildren();
+  if (!items.length) box.append(el("div", { class: "card muted", text: "Nothing proposed yet. Try “Propose” on the QuickBooks tab, or ask the assistant to draft an email." }));
+  for (const it of items) {
+    const note = el("input", { placeholder: "Note (optional)", style: "flex:1;min-width:180px" });
+    const decide = async (decision) => {
+      const name = reviewer(); if (!name) return;
+      try { await api(`/approvals/${it.id}/decision`, { method: "POST", body: JSON.stringify({ decision, reviewer: name, note: note.value }) }); toast(decision === "approved" ? "Approved and logged (not executed in this prototype)." : "Rejected and logged."); loadApprovals(); refreshHealth(); }
+      catch (e) { toast(e.message); }
+    };
+    box.append(el("div", { class: "card" },
+      el("div", { class: "row", style: "justify-content:space-between" }, el("strong", { text: it.title }),
+        el("span", { class: "pill " + ({ pending: "warn", approved: "ok", rejected: "bad" }[it.status]), text: it.status })),
+      el("div", { class: "small muted", text: `${it.action_label} · proposed by ${it.proposed_by} · ${it.created_at}` }),
+      el("pre", { text: it.details }),
+      it.status === "pending"
+        ? el("div", { class: "row" }, note, el("button", { class: "btn danger", text: "Reject", onclick: () => decide("rejected") }), el("button", { class: "btn good", text: "Approve", onclick: () => decide("approved") }))
+        : el("div", { class: "small" }, el("strong", { text: `${it.status} by ${it.decided_by} at ${it.decided_at}. ` }), it.execution, it.decision_note ? ` Note: ${it.decision_note}` : "")));
+  }
+}
+loaders.approvals = loadApprovals;
+
+// ---------------- ACTIVITY
+async function loadAudit() {
+  const a = await api("/audit?limit=300");
+  const i = a.integrity;
+  $("#integrity").replaceChildren(el("span", { class: "pill " + (i.ok ? "ok" : "bad"), text: i.ok ? `Integrity verified · ${i.entries} entries` : `Log altered at entry ${i.broken_at}` }));
+  table($("#audit-table"), [
+    { label: "Time (UTC)", render: (r) => el("span", { class: "small", style: "white-space:nowrap", text: r.ts.replace("T", " ").replace("+00:00", "") }) },
+    { label: "Event", render: (r) => el("span", { class: "pill info", text: r.event }) },
+    { label: "Who", key: "actor" },
+    { label: "Details", render: (r) => el("span", { class: "small muted", text: Object.entries(r.details || {}).filter(([, v]) => v !== null && v !== "" && !(Array.isArray(v) && !v.length)).map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`).join(" · ").slice(0, 300) }) },
+  ], a.entries);
+}
+loaders.activity = loadAudit;
+$("#audit-refresh").addEventListener("click", loadAudit);
+
+// ---------------- PRIVACY
+async function loadPrivacy() {
+  const p = await api("/privacy");
+  $("#model-note").textContent = `AI model: ${p.model_note} Cloud AI is ${p.cloud_ai_allowed ? "ALLOWED (approved)" : "blocked until approved"}.`;
+  table($("#privacy-table"), [
+    { label: "Function", key: "function" }, { label: "Runs", key: "runs" },
+    { label: "Needs internet", render: (r) => el("span", { class: "pill " + (r.internet ? "warn" : "ok"), text: r.internet ? "yes" : "no" }) },
+    { label: "What leaves this machine", key: "leaves_machine" },
+  ], p.functions);
+  $("#controls").replaceChildren(...p.controls.map((c) => el("li", { text: c })));
+}
+loaders.privacy = loadPrivacy;
+
+// ---------------- boot
+refreshHealth(); setInterval(refreshHealth, 15000);
+loadInvoices().catch(() => {});
+const start = (location.hash || "#ask").slice(1);
+show(document.getElementById("tab-" + start) ? start : "ask");
+</script>
+</body>
+</html>

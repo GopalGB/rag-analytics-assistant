@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 
-from app.agent.llm import BedrockLLM, CommandLLM, OpenAILLM, build_llm
+from app.agent.llm import BedrockLLM, CommandLLM, OllamaLLM, OpenAILLM, build_llm, select_llm
 from app.agent.tools import ToolBox
 from app.config import Settings
 
@@ -70,17 +70,44 @@ def test_command_llm_text_protocol(tmp_path, store, retriever):
 
 
 def test_build_llm_selection():
-    # Pin provider fields explicitly so an ambient OPENAI_API_KEY in the environment can't leak in.
-    base = {"openai_api_key": None, "bedrock_model_id": None, "llm_cli_command": None}
+    # Pin provider fields explicitly so ambient env vars can't leak in; no Ollama probing.
+    base = {"openai_api_key": None, "bedrock_model_id": None, "llm_cli_command": None, "ollama_model": None}
+    cloud_ok = {**base, "allow_cloud_ai": True}
     assert build_llm(Settings(llm_provider="none", **base)) is None
-    assert build_llm(Settings(llm_provider="openai", **base)) is None  # no key configured
+    assert build_llm(Settings(llm_provider="openai", **cloud_ok)) is None  # no key configured
+    assert isinstance(build_llm(Settings(llm_provider="openai", **{**cloud_ok, "openai_api_key": "k"})), OpenAILLM)
     assert isinstance(
-        build_llm(Settings(llm_provider="openai", **{**base, "openai_api_key": "k"})), OpenAILLM
+        build_llm(Settings(llm_provider="cli", **{**cloud_ok, "llm_cli_command": "echo hi"})), CommandLLM
     )
+    assert isinstance(build_llm(Settings(llm_provider="auto", **{**cloud_ok, "openai_api_key": "k"})), OpenAILLM)
     assert isinstance(
-        build_llm(Settings(llm_provider="cli", **{**base, "llm_cli_command": "echo hi"})), CommandLLM
+        build_llm(Settings(llm_provider="auto", **{**cloud_ok, "llm_cli_command": "echo hi"})), CommandLLM
     )
-    assert isinstance(build_llm(Settings(llm_provider="auto", **{**base, "openai_api_key": "k"})), OpenAILLM)
-    assert isinstance(
-        build_llm(Settings(llm_provider="auto", **{**base, "llm_cli_command": "echo hi"})), CommandLLM
+
+
+def test_cloud_ai_blocked_without_approval():
+    base = {"openai_api_key": "k", "bedrock_model_id": "m", "llm_cli_command": "echo hi", "ollama_model": None,
+            "llm_cli_is_local": False}
+    for provider in ("openai", "bedrock", "cli", "auto"):
+        llm, note = select_llm(Settings(llm_provider=provider, allow_cloud_ai=False, **base))
+        assert llm is None, provider
+        assert "approval" in note
+
+
+def test_local_models_allowed_without_cloud_approval():
+    base = {"bedrock_model_id": None, "llm_cli_command": None, "allow_cloud_ai": False}
+    llm = build_llm(Settings(llm_provider="ollama", ollama_model="qwen2.5:14b", openai_api_key=None, **base))
+    assert isinstance(llm, OllamaLLM) and llm.is_local
+    local_server = Settings(
+        llm_provider="openai", openai_api_key="x", openai_base_url="http://localhost:1234/v1", ollama_model=None, **base
     )
+    assert build_llm(local_server).is_local
+    cli = Settings(llm_provider="cli", llm_cli_command="echo hi", llm_cli_is_local=True, openai_api_key=None,
+                   ollama_model=None, bedrock_model_id=None, allow_cloud_ai=False)
+    assert build_llm(cli).is_local
+
+
+def test_command_llm_complete(tmp_path):
+    script = tmp_path / "cli.py"
+    script.write_text('import sys\nsys.stdin.read()\nprint(\'{"total": 10}\')\n')
+    assert '"total"' in CommandLLM(f"{sys.executable} {script}").complete("sys", "prompt")

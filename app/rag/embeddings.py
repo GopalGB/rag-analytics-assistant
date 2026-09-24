@@ -10,7 +10,7 @@ import hashlib
 
 import numpy as np
 
-from app.data.textindex import tokenize
+from app.data.textindex import content_terms
 
 
 class EmbeddingService:
@@ -49,7 +49,7 @@ class EmbeddingService:
     def _embed_local(self, texts: list[str]) -> np.ndarray:
         mat = np.zeros((len(texts), self.dim), dtype=np.float32)
         for i, text in enumerate(texts):
-            for tok in tokenize(text):
+            for tok in content_terms(text):
                 h = int(hashlib.blake2b(tok.encode("utf-8"), digest_size=8).hexdigest(), 16)
                 mat[i, h % self.dim] += 1.0
         return _l2_normalize(mat)

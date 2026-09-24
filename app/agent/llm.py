@@ -1,18 +1,19 @@
-"""LLM provider abstraction. Three backends, one interface.
+"""LLM provider abstraction. Four backends, one interface.
 
-Each provider implements `converse(...)`: given a system prompt, prior turn history, the new
-question, and a ToolBox, it runs the full tool-calling conversation in its OWN native format and
-returns the final answer text. Tool side effects (SQL run, sources) are recorded on the ToolBox, so
-the engine stays provider-agnostic.
+Each provider implements:
+- `converse(...)`: given a system prompt, prior turn history, the new question, and a ToolBox, run the
+  full tool-calling conversation in its OWN native format and return the final answer text. Tool side
+  effects (SQL run, sources, proposed actions) are recorded on the ToolBox, so the engine stays
+  provider-agnostic.
+- `complete(system, prompt)`: a single tool-free completion (used for invoice field extraction).
 
-- OpenAILLM   — OpenAI-compatible /chat/completions with native tool-calling.
-- BedrockLLM  — AWS Bedrock Runtime `converse` with native tool use (boto3, lazy import).
-- CommandLLM  — any local CLI (e.g. the ChatGPT/Codex CLI): prompt in on stdin, completion out on
-                stdout, with a text-based tool protocol for models without native tool-calling.
+- OllamaLLM   — a LOCAL model served by Ollama on this machine (recommended; nothing leaves the Mac).
+- OpenAILLM   — OpenAI-compatible /chat/completions with native tool-calling (cloud, or a local server).
+- BedrockLLM  — AWS Bedrock Runtime `converse` with native tool use (cloud; boto3, lazy import).
+- CommandLLM  — any CLI: prompt in on stdin, completion out on stdout, text-based tool protocol.
 
-`build_llm` picks a provider from settings; returns None only when a provider is explicitly disabled
-or unconfigured. The app is LLM-first: with `require_llm` set (the default) startup fails fast rather
-than running without a model.
+Privacy gate: a provider that sends data off the machine is only built when ALLOW_CLOUD_AI=true.
+`select_llm` returns the provider (or None) plus a human-readable note explaining the choice.
 """
 
 from __future__ import annotations
@@ -21,26 +22,39 @@ import json
 import re
 import subprocess
 from typing import Any, Protocol
+from urllib.parse import urlparse
 
 from app.agent.tools import TOOLS, ToolBox
 
 
 class BaseLLM(Protocol):
     supports_tools: bool
+    name: str
+    is_local: bool
 
     def converse(
         self, system: str, history: list[dict[str, str]], question: str, toolbox: ToolBox, max_iters: int
     ) -> str: ...
+
+    def complete(self, system: str, prompt: str) -> str: ...
+
+
+def _is_local_url(url: str) -> bool:
+    host = (urlparse(url).hostname or "").lower()
+    return host in {"localhost", "127.0.0.1", "::1", "0.0.0.0"} or host.endswith(".local")
 
 
 # --------------------------------------------------------------------------- OpenAI
 class OpenAILLM:
     supports_tools = True
 
-    def __init__(self, api_key: str, base_url: str, model: str):
+    def __init__(self, api_key: str, base_url: str, model: str, timeout: int = 120):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.timeout = timeout
+        self.is_local = _is_local_url(self.base_url)
+        self.name = f"openai-compatible:{model}"
 
     def _call(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None) -> dict[str, Any]:
         import requests  # imported lazily; only exercised on the OpenAI provider path
@@ -52,7 +66,7 @@ class OpenAILLM:
             f"{self.base_url}/chat/completions",
             headers={"Authorization": f"Bearer {self.api_key}"},
             json=body,
-            timeout=60,
+            timeout=self.timeout,
         )
         resp.raise_for_status()
         return resp.json()["choices"][0]["message"]
@@ -84,13 +98,41 @@ class OpenAILLM:
         final = self._call(messages + [{"role": "user", "content": "Give your best final answer now."}], None)
         return final.get("content") or ""
 
+    def complete(self, system: str, prompt: str) -> str:
+        msg = self._call([{"role": "system", "content": system}, {"role": "user", "content": prompt}], None)
+        return msg.get("content") or ""
+
+
+# --------------------------------------------------------------------------- Ollama (local)
+class OllamaLLM(OpenAILLM):
+    """A model running locally under Ollama (https://ollama.com), via its OpenAI-compatible API.
+
+    On Apple Silicon this runs on the GPU through Metal. No API key; no data leaves the machine."""
+
+    def __init__(self, base_url: str, model: str, timeout: int = 300):
+        super().__init__(api_key="ollama", base_url=base_url, model=model, timeout=timeout)
+        self.name = f"ollama:{model}"
+
+    @staticmethod
+    def reachable(base_url: str, timeout: float = 0.8) -> bool:
+        import requests
+
+        root = base_url.rstrip("/").removesuffix("/v1")
+        try:
+            return requests.get(f"{root}/api/tags", timeout=timeout).ok
+        except Exception:
+            return False
+
 
 # --------------------------------------------------------------------------- Bedrock
 class BedrockLLM:
     supports_tools = True
 
+    is_local = False
+
     def __init__(self, model_id: str, region: str, client: Any | None = None):
         self.model_id = model_id
+        self.name = f"bedrock:{model_id}"
         if client is None:
             import boto3  # imported lazily; only exercised on the Bedrock provider path
 
@@ -152,6 +194,15 @@ class BedrockLLM:
         )
         return self._text(resp["output"]["message"])
 
+    def complete(self, system: str, prompt: str) -> str:
+        resp = self.client.converse(
+            modelId=self.model_id,
+            system=[{"text": system}],
+            messages=[{"role": "user", "content": [{"text": prompt}]}],
+            inferenceConfig={"temperature": 0.0},
+        )
+        return self._text(resp["output"]["message"])
+
 
 # --------------------------------------------------------------------------- CLI / command
 _TOOL_LINE = re.compile(r"\s*TOOL\s+(\w+)\s+(\{.*\})\s*$", re.S)
@@ -175,9 +226,11 @@ class CommandLLM:
 
     supports_tools = False
 
-    def __init__(self, command: str, timeout: int = 120):
+    def __init__(self, command: str, timeout: int = 120, is_local: bool = False):
         self.command = command
         self.timeout = timeout
+        self.is_local = is_local  # set by the operator: a CLI may call a cloud service
+        self.name = "cli:" + command.split()[0] if command.split() else "cli"
 
     def _run(self, prompt: str) -> str:
         try:
@@ -215,34 +268,72 @@ class CommandLLM:
             turns.append({"role": "user", "content": f"TOOL_RESULT[{name}]: {json.dumps(result)[:4000]}"})
         return self._run(self._render(system + "\nGive your final answer now.", turns, question))
 
+    def complete(self, system: str, prompt: str) -> str:
+        return self._run(self._render(system, [], prompt))
+
 
 # --------------------------------------------------------------------------- selection
-def build_llm(settings) -> BaseLLM | None:
+_CLOUD_BLOCKED = (
+    "{what} would send questions and document extracts off this machine, which needs explicit approval. "
+    "Set ALLOW_CLOUD_AI=true once approved, or use a local model (Ollama)."
+)
+
+
+def select_llm(settings) -> tuple[BaseLLM | None, str]:
+    """Pick a provider. Returns (llm or None, note explaining the choice for the status/privacy page)."""
     provider = settings.llm_provider
+    allow_cloud = settings.allow_cloud_ai
 
-    def openai_if_possible():
-        if settings.openai_api_key:
-            return OpenAILLM(settings.openai_api_key, settings.openai_base_url, settings.openai_model)
-        return None
+    def ollama(probe: bool):
+        if not settings.ollama_model:
+            return None, "Ollama model not set (OLLAMA_MODEL)."
+        if probe and not OllamaLLM.reachable(settings.ollama_base_url):
+            return None, f"Ollama is not running at {settings.ollama_base_url}."
+        return OllamaLLM(settings.ollama_base_url, settings.ollama_model, settings.llm_timeout), "Local model via Ollama."
 
-    def bedrock_if_possible():
-        if settings.bedrock_model_id:
-            return BedrockLLM(settings.bedrock_model_id, settings.aws_region)
-        return None
+    def openai():
+        if not settings.openai_api_key:
+            return None, "OPENAI_API_KEY not set."
+        llm = OpenAILLM(settings.openai_api_key, settings.openai_base_url, settings.openai_model, settings.llm_timeout)
+        if not llm.is_local and not allow_cloud:
+            return None, _CLOUD_BLOCKED.format(what=f"The cloud model at {settings.openai_base_url}")
+        return llm, "Local OpenAI-compatible server." if llm.is_local else "Cloud model (approved via ALLOW_CLOUD_AI)."
 
-    def cli_if_possible():
-        if settings.llm_cli_command:
-            return CommandLLM(settings.llm_cli_command, settings.llm_cli_timeout)
-        return None
+    def bedrock():
+        if not settings.bedrock_model_id:
+            return None, "BEDROCK_MODEL_ID not set."
+        if not allow_cloud:
+            return None, _CLOUD_BLOCKED.format(what="AWS Bedrock")
+        return BedrockLLM(settings.bedrock_model_id, settings.aws_region), "Cloud model on AWS Bedrock (approved)."
+
+    def cli():
+        if not settings.llm_cli_command:
+            return None, "LLM_CLI_COMMAND not set."
+        if not settings.llm_cli_is_local and not allow_cloud:
+            return None, _CLOUD_BLOCKED.format(what="The configured CLI model")
+        llm = CommandLLM(settings.llm_cli_command, settings.llm_cli_timeout, is_local=settings.llm_cli_is_local)
+        return llm, "Local CLI model." if llm.is_local else "CLI model (approved via ALLOW_CLOUD_AI)."
 
     if provider == "none":
-        return None
+        return None, "AI model disabled (LLM_PROVIDER=none)."
+    if provider == "ollama":
+        return ollama(probe=False)
     if provider == "openai":
-        return openai_if_possible()
+        return openai()
     if provider == "bedrock":
-        return bedrock_if_possible()
+        return bedrock()
     if provider == "cli":
-        return cli_if_possible()
-    # auto: prefer a configured cloud API, then a local CLI. None means "nothing configured" —
-    # with require_llm set (the default) the app refuses to start rather than run without a model.
-    return openai_if_possible() or bedrock_if_possible() or cli_if_possible()
+        return cli()
+    # auto: prefer a local model, then an approved cloud API, then a CLI.
+    notes = []
+    for pick in (lambda: ollama(probe=True), openai, bedrock, cli):
+        llm, note = pick()
+        if llm is not None:
+            return llm, note
+        notes.append(note)
+    blocked = [n for n in notes if "explicit approval" in n]
+    return None, blocked[0] if blocked else "No AI model configured. Install Ollama for a local model (see docs)."
+
+
+def build_llm(settings) -> BaseLLM | None:
+    return select_llm(settings)[0]

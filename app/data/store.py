@@ -45,6 +45,9 @@ class DataStore:
         # Hard lockdown: queries may not touch the filesystem or network. One-way; never re-enabled.
         self.con.execute("SET enable_external_access=false")
         self._lock = threading.RLock()
+        # Tables loaded from spreadsheet files in the data dir (vs. tables the app manages itself,
+        # like extracted invoices or QuickBooks data). Only these are dropped when a file disappears.
+        self.file_tables: set[str] = set()
 
     # ---- introspection -------------------------------------------------
     def tables(self) -> list[str]:

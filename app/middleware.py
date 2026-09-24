@@ -28,13 +28,17 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 
 class BodyLimitMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, max_bytes: int):
+    """Rejects oversized bodies. `overrides` maps exact paths (e.g. /upload) to a larger limit."""
+
+    def __init__(self, app, max_bytes: int, overrides: dict[str, int] | None = None):
         super().__init__(app)
         self.max_bytes = max_bytes
+        self.overrides = overrides or {}
 
     async def dispatch(self, request: Request, call_next):
+        limit = self.overrides.get(request.url.path, self.max_bytes)
         cl = request.headers.get("content-length")
-        if cl is not None and cl.isdigit() and int(cl) > self.max_bytes:
+        if cl is not None and cl.isdigit() and int(cl) > limit:
             return JSONResponse({"error": "request body too large"}, status_code=413)
         return await call_next(request)
 
@@ -95,4 +99,8 @@ def install_security_middleware(app, settings) -> None:
         per_minute=settings.rate_per_minute,
         burst=settings.rate_burst,
     )
-    app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_body_bytes)
+    app.add_middleware(
+        BodyLimitMiddleware,
+        max_bytes=settings.max_body_bytes,
+        overrides={"/upload": settings.max_upload_bytes + 64 * 1024},
+    )

@@ -54,10 +54,16 @@ class FakeLLM:
         self.sql = sql
         self.answer = answer
 
+    name = "fake"
+    is_local = True
+
     def converse(self, system, history, question, toolbox, max_iters):
         if self.sql:
             toolbox.run("run_sql", {"sql": self.sql})
         return self.answer
+
+    def complete(self, system, prompt):
+        return "{}"
 
 
 @pytest.fixture

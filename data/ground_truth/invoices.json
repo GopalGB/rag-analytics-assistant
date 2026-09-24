@@ -1,0 +1,123 @@
+[
+  {
+    "file": "summit_INV-10421.pdf",
+    "split": "sample",
+    "supplier": "Summit Ridge Electrical Supply LLC",
+    "invoice_number": "INV-10421",
+    "invoice_date": "2026-05-04",
+    "due_date": "2026-06-03",
+    "subtotal": 4500.0,
+    "tax": 371.25,
+    "total": 4871.25
+  },
+  {
+    "file": "greenleaf_GL-2291.pdf",
+    "split": "sample",
+    "supplier": "Greenleaf Grounds Care Co.",
+    "invoice_number": "GL-2291",
+    "invoice_date": "2026-05-12",
+    "due_date": "2026-06-11",
+    "subtotal": null,
+    "tax": null,
+    "total": 1250.0
+  },
+  {
+    "file": "metro_MOS-7781.pdf",
+    "split": "sample",
+    "supplier": "Metro Office Solutions Inc",
+    "invoice_number": "MOS-7781",
+    "invoice_date": "2026-05-15",
+    "due_date": "2026-06-14",
+    "subtotal": 636.88,
+    "tax": 52.54,
+    "total": 689.42
+  },
+  {
+    "file": "coastal_5530.pdf",
+    "split": "sample",
+    "supplier": "Coastal Plumbing & Heating Ltd",
+    "invoice_number": "5530",
+    "invoice_date": "2026-05-18",
+    "due_date": "2026-06-17",
+    "subtotal": 2310.0,
+    "tax": 0.0,
+    "total": 2310.0
+  },
+  {
+    "file": "pioneer_PCW-0192_scanned.pdf",
+    "split": "sample",
+    "supplier": "Pioneer Concrete Works",
+    "invoice_number": "PCW-0192",
+    "invoice_date": "2026-06-02",
+    "due_date": "2026-07-02",
+    "subtotal": 12000.0,
+    "tax": 990.0,
+    "total": 12990.0
+  },
+  {
+    "file": "summit_INV-10421_resubmitted.pdf",
+    "split": "sample",
+    "supplier": "Summit Ridge Electrical Supply LLC",
+    "invoice_number": "INV-10421",
+    "invoice_date": "2026-05-04",
+    "due_date": "2026-06-03",
+    "subtotal": 4500.0,
+    "tax": 371.25,
+    "total": 4871.25
+  },
+  {
+    "file": "harbor_waste_no_number.pdf",
+    "split": "sample",
+    "supplier": "Harbor Waste Services",
+    "invoice_number": null,
+    "invoice_date": "2026-05-28",
+    "due_date": null,
+    "subtotal": null,
+    "tax": null,
+    "total": 415.0
+  },
+  {
+    "file": "brightspark_BSC-118.pdf",
+    "split": "sample",
+    "supplier": "BrightSpark Cleaning Co",
+    "invoice_number": "BSC-118",
+    "invoice_date": "2026-06-05",
+    "due_date": "2026-06-19",
+    "subtotal": 900.0,
+    "tax": 74.25,
+    "total": 984.25
+  },
+  {
+    "file": "northgate_NSS-2026-044.pdf",
+    "split": "unseen",
+    "supplier": "Northgate Security Systems",
+    "invoice_number": "NSS/2026/044",
+    "invoice_date": "2026-06-21",
+    "due_date": "2026-07-21",
+    "subtotal": 2869.05,
+    "tax": 236.7,
+    "total": 3105.75
+  },
+  {
+    "file": "blueridge_BRIT-5521.pdf",
+    "split": "unseen",
+    "supplier": "Blue Ridge IT Services",
+    "invoice_number": "BRIT-5521",
+    "invoice_date": "2026-06-25",
+    "due_date": "2026-07-25",
+    "subtotal": null,
+    "tax": null,
+    "total": 845.0
+  },
+  {
+    "file": "lakeside_catering_LC-3390.png",
+    "split": "unseen",
+    "supplier": "Lakeside Catering",
+    "invoice_number": "LC-3390",
+    "invoice_date": "2026-06-30",
+    "due_date": "2026-07-14",
+    "subtotal": 1097.09,
+    "tax": 90.51,
+    "total": 1187.6
+  }
+]

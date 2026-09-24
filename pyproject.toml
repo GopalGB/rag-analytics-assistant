@@ -1,15 +1,17 @@
 [project]
-name = "rag-analytics-assistant"
-version = "0.1.0"
-description = "An LLM-first, guardrailed question-answering assistant over your own tabular data and documents."
+name = "private-ai-assistant"
+version = "0.2.0"
+description = "Local-first private AI assistant prototype: document Q&A with sources, invoice extraction, read-only QuickBooks reconciliation, approvals and audit log."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 
-# Optional provider extras. Core install stays light; add what you use:
-#   pip install boto3            # for the AWS Bedrock provider
+# Optional extras. Core install stays light; add what you use:
+#   pip install boto3            # AWS Bedrock provider (cloud; requires ALLOW_CLOUD_AI)
+#   pip install keyring          # store QuickBooks tokens in the macOS Keychain
 [project.optional-dependencies]
 bedrock = ["boto3>=1.34"]
+keychain = ["keyring>=24"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

@@ -13,13 +13,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Install OCR engine
+        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
-      - name: Generate sample data
-        run: python scripts/generate_sample_data.py
       - name: Lint
         run: ruff check .
       - name: Test
         run: pytest
+      - name: Acceptance checks
+        run: python scripts/evaluate.py

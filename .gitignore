@@ -10,12 +10,12 @@ venv/
 .ruff_cache/
 .mypy_cache/
 
-# Local secrets & state
+# Local secrets & state (database, caches, reviews, approvals, activity log, OAuth tokens)
 .env
-storage/*.duckdb
-storage/*.duckdb.wal
-storage/*.log
-storage/*.jsonl
+storage/
+
+# Files uploaded through the UI during demos
+data/sample/uploads/
 
 # OS
 .DS_Store
