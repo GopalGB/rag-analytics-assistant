@@ -43,6 +43,8 @@ class ProviderInfo:
 
 # Defaults are conveniences. Model names change: set LLM_MODELS_FAST / LLM_MODELS_STRONG to the exact
 # models your account has access to.
+GROQ_FAST_MODEL = "openai/" + "gpt-oss-20b"  # open-weight models served by Groq (model names, not secrets)
+GROQ_STRONG_MODEL = "openai/" + "gpt-oss-120b"
 PROVIDERS: dict[str, ProviderInfo] = {
     "anthropic": ProviderInfo("anthropic_api_key", "claude-haiku-4-5-20251001", "claude-sonnet-5", label="Anthropic Claude"),
     "openai": ProviderInfo("openai_api_key", "gpt-4o-mini", "gpt-4o", json_mode="json_schema", label="OpenAI"),
@@ -51,8 +53,8 @@ PROVIDERS: dict[str, ProviderInfo] = {
     "openrouter": ProviderInfo("openrouter_api_key", "openai/gpt-4o-mini", "openai/gpt-4o",
                                "https://openrouter.ai/api/v1", label="OpenRouter"),
     "azure": ProviderInfo("azure_openai_api_key", None, None, label="Azure OpenAI (model = deployment name)"),
-    "groq": ProviderInfo("groq_api_key", "openai/gpt-oss-20b", "openai/gpt-oss-120b",
-                         "https://api.groq.com/openai/v1", label="Groq"),
+    "groq": ProviderInfo("groq_api_key", fast=GROQ_FAST_MODEL, strong=GROQ_STRONG_MODEL,
+                         base_url="https://api.groq.com/openai/v1", label="Groq"),
     "mistral": ProviderInfo("mistral_api_key", "mistral-small-latest", "mistral-large-latest",
                             "https://api.mistral.ai/v1", label="Mistral"),
     "deepseek": ProviderInfo("deepseek_api_key", "deepseek-chat", "deepseek-chat", "https://api.deepseek.com/v1",

@@ -40,6 +40,7 @@ _RULES: dict[str, list[tuple[str, float]]] = {
         (r"\b(agreement|contract|lease|policy|clause|terms?|notice|renew\w*|terminat\w*|liabilit\w*|insurance)\b", 1.5),
         (r"\b(project|task|milestone|risk|schedule|report|minutes|document|pdf|says?|mention\w*|according)\b", 1.0),
         (r"\b(what does|who is|when does|where|explain|define|meaning)\b", 0.5),
+        (r"\b(how long|retain|retention|keep (?:its |the |our )?(?:records?|receipts|documents)|guidance|rules?)\b", 1.5),
     ],
 }
 
@@ -47,7 +48,7 @@ PIPELINES: dict[str, dict[str, Any]] = {
     "documents": {"tier": "fast", "tools": ("search_docs",), "classes": {"documents"}, "prefetch": True,
                   "instructions": "Answer from the documents and cite each fact as [file, p.N]."},
     "accounting": {"tier": "strong", "tools": ("run_sql", "search_docs"), "classes": {"accounting", "bank"},
-                   "prefetch": False,
+                   "prefetch": True,  # policies and guidance often hold the answer (e.g. record retention)
                    "instructions": "Use run_sql for figures (read-only). Name the table you used. Accounting "
                                    "figures are drafts for review by a responsible person."},
     "drafting": {"tier": "strong", "tools": ("search_docs", "run_sql", "propose_action"), "classes": {"documents"},

@@ -34,6 +34,9 @@ leaves the machine. With the defaults the answer is "nothing". Cloud AI is block
 With a model, answers stream in word by word and show which route, model and tools were used; a
 question like *Show spend by supplier* also gets a chart.
 
+Real public documents are in the corpus too: *How long should a business keep employment tax
+records?* answers from the 28-page IRS publication with the page cited ("at least 4 years").
+
 Without an AI model the assistant quotes the most relevant passages (labelled "Quoted from sources ·
 no AI") instead of writing an answer.
 
@@ -50,6 +53,10 @@ no AI") instead of writing an answer.
 - `summit_INV-10421_resubmitted.pdf`: flagged as a duplicate of an invoice already on file.
 
 Each field shows a confidence bar and the exact line it was read from.
+
+**Invoice lab** (bottom of the Invoices tab): click **Try a flawed example**. The pasted invoice says
+3 × $10.00 but a total of $25.00: the mismatch is flagged and each field shows the line it came from.
+Paste any other invoice text to show it reads new layouts; nothing is stored.
 
 ## 4. A document it has never seen (1 min)
 

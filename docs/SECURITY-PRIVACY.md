@@ -17,6 +17,7 @@
 
 | Flow | Where it goes | When |
 |---|---|---|
+| Everything the demo reads (synthetic + public files only) | the hosted model provider | **only** in the hosted public demo (`PUBLIC_DEMO=true`, see [DEPLOYMENT.md](DEPLOYMENT.md)); never used with company data |
 | Documents, invoices, spreadsheets | `DATA_DIR` on the Mac → parsed locally → `storage/` | always |
 | Scanned pages / photos | Tesseract OCR on the Mac | always |
 | Questions + retrieved passages | the local model (Ollama) | when a model is running |
@@ -30,12 +31,13 @@ The **Privacy & security** tab shows this live for the current configuration.
 
 | Area | Control |
 |---|---|
-| Network exposure | Binds to `127.0.0.1` by default; optional `APP_API_KEY` for any other client; rate limiting; request-size limits; security headers (`nosniff`, `DENY` framing, `no-referrer`, `no-store`). |
+| Network exposure | Binds to `127.0.0.1` by default; optional `APP_API_KEY` for any other client (constant-time check); rate limiting with bounded state; request-size limits that count streamed bytes; security headers (`nosniff`, `DENY` framing, `no-referrer`, `no-store`, strict CSP). |
+| Other websites | A page on another site can't make your browser change anything here: cross-site POSTs are rejected (`Sec-Fetch-Site`/`Origin` checks, `ALLOWED_ORIGINS` for a trusted proxy), and requests with an unknown `Host` are refused (`ALLOWED_HOSTS`), which blocks DNS-rebinding tricks against `127.0.0.1`. |
 | AI routing | Privacy router decides local vs cloud per request from data classes and PII; the tool layer blocks cloud models from reading non-allowed tables/documents; earlier local-only turns are withheld from cloud models; every answer records which model handled it (see [LLM-ROUTING.md](LLM-ROUTING.md)). |
 | Type safety | Model tool calls and structured outputs are validated against Pydantic schemas before use; invalid output is rejected and retried, never executed. |
 | API keys | Provider keys live only in `.env` (git-ignored), are never sent to the browser, and are redacted by the output scrubber if a model ever echoes one. |
 | Prompt injection | Input firewall (instruction override, role-play jailbreaks, secret fishing, unsafe SQL, format hijacking); a system prompt that treats documents and tool output as data; output scrubber that redacts credential-shaped strings. |
-| SQL | DuckDB with external access disabled (no file/network reads); the query is parsed and every table checked against an allowlist; single `SELECT` only; hard row cap. |
+| SQL | DuckDB with external access disabled (no file/network reads); the query is parsed and every table checked against an allowlist (a CTE named like a real table counts as that table); single `SELECT` only; hard row cap; row generators, table functions and recursive queries rejected; `getenv`/settings functions blocked; 2-second timeout and a memory limit. |
 | QuickBooks | GET-only client; `SELECT * FROM <allowlisted entity>` only; single-use OAuth `state` checked; production refused by default; one-click revoke + local data deletion. |
 | Credentials | QuickBooks tokens in a `0600` file under `storage/secrets/` or the macOS Keychain (`SECRETS_BACKEND=keyring`). `.env` and `storage/` are git-ignored. The app never asks for banking credentials or company passwords. |
 | Files | Uploads are type-checked and size-limited and stored under `DATA_DIR/uploads/`; file names are sanitised. Original-file links are confined to `DATA_DIR` (path traversal blocked). Word files are read as XML; macros are never executed. |

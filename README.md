@@ -42,7 +42,7 @@ Measured results on the synthetic set (from `make evaluate`, see [docs/TEST-RESU
 11/11 invoices extracted with every field correct (including 3 unseen layouts, a scan and a photo),
 5/5 planted problems flagged, 10/10 search questions return the right document first, 3/3 unanswerable
 questions answered "not found", 8/8 invoices reconciled correctly against QuickBooks, 8/8 bank lines
-classified correctly, 11/11 invoices with correct line items, 7/8 reworded questions found by semantic search.
+classified correctly, 11/11 invoices with correct line items, 6/8 reworded questions found by semantic search (7/8 before the 28-page IRS publication joined the corpus).
 
 ## Share it without installing: hosted public demo
 

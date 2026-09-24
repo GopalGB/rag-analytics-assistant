@@ -233,3 +233,48 @@ def test_worker_config_and_node_tests_exist():
     toml = (ROOT / "deploy" / "wrangler.toml").read_text()
     assert 'main = "rag-assistant-worker.mjs"' in toml and "ORIGIN_API_KEY" not in toml  # the key is a secret
     assert os.path.exists(ROOT / "tests" / "test_proxy_worker.mjs")
+
+
+# --------------------------------------------------------------------------- found in live end-to-end runs
+def test_text_written_tool_calls_are_executed_not_shown(store, retriever):
+    from app.agent.tools import ToolBox
+    from app.llm.providers import OpenAICompatLLM, text_tool_calls
+
+    class R:
+        status_code = 200
+
+        def __init__(self, msg):
+            self.msg = msg
+
+        def json(self):
+            return {"choices": [{"message": self.msg}]}
+
+    class H:
+        def __init__(self):
+            self.replies = [
+                R({"content": '<tool_call>\n{{"name": "search_docs", "arguments": {"query": "baseline", "k": 1}}}\n</tool_call>'}),
+                R({"content": "Baseline means expected units [guide.md]."}),
+            ]
+
+        def post(self, url, headers=None, json=None, timeout=None, stream=False):
+            return self.replies.pop(0)
+
+    tb = ToolBox(store, retriever)
+    out = OpenAICompatLLM(None, "http://127.0.0.1:1/v1", "qwen", http=H()).converse("s", [], "baseline?", tb, 3)
+    assert out == "Baseline means expected units [guide.md]." and tb.calls[0]["tool"] == "search_docs"
+    assert text_tool_calls('<tool_call>{"name": "rm_rf", "arguments": {}}</tool_call>', {"search_docs"}) == []
+
+
+def test_wide_tables_list_every_column_quoted_as_duckdb_needs():
+    s = DataStore(":memory:")
+    s.load_dataframe("wide", pd.DataFrame([{f"c{i}": i for i in range(45)} | {"ISO4217-code": "AED", "Name": "x"}]))
+    summary = s.schema_summary()
+    assert '"ISO4217-code"' in summary and '"Name"' in summary and "c44" in summary
+    s.close()
+
+
+def test_record_retention_questions_route_to_documents():
+    from app.llm.intent import IntentRouter
+
+    plan = IntentRouter(model_fallback=False).plan("How long should a business keep employment tax records?")
+    assert plan.intent == "documents" and plan.method == "rules"

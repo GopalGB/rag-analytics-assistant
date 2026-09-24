@@ -240,8 +240,9 @@ def main() -> None:
     out("### Paraphrased questions")
     out("")
     out(f"Top-1: **{para_ok}/{len(PARAPHRASE_CASES)}** with {retriever.embeddings.name}. These questions share few "
-        "words with the source, so they measure semantic understanding. For reference, a measured run with offline "
-        "hashing embeddings scored 4/8 and with `nomic-embed-text` scored 7/8.")
+        "words with the source, so they measure semantic understanding. For reference: offline hashing embeddings score "
+        "4/8; `nomic-embed-text` scored 7/8 on the synthetic documents alone and 6/8 once the 28-page IRS publication "
+        "was added, because that real document now outranks the lease for \"What happens when the tenancy ends?\".")
     out("")
     out("| Question | Expected source | Top result | Top-1 |")
     out("|---|---|---|---|")

@@ -57,7 +57,7 @@ Top-1: **10/10**, top-3: **10/10** (BM25 + openai:nomic-embed-text embeddings, M
 
 ### Paraphrased questions
 
-Top-1: **7/8** with openai:nomic-embed-text. These questions share few words with the source, so they measure semantic understanding. For reference, a measured run with offline hashing embeddings scored 4/8 and with `nomic-embed-text` scored 7/8.
+Top-1: **6/8** with openai:nomic-embed-text. These questions share few words with the source, so they measure semantic understanding. For reference: offline hashing embeddings score 4/8; `nomic-embed-text` scored 7/8 on the synthetic documents alone and 6/8 once the 28-page IRS publication was added, because that real document now outranks the lease for "What happens when the tenancy ends?".
 
 | Question | Expected source | Top result | Top-1 |
 |---|---|---|---|
@@ -68,7 +68,7 @@ Top-1: **7/8** with openai:nomic-embed-text. These questions share few words wit
 | Is the refurbishment going over budget? | Project_Status_Riverside_Renovation.pdf | Project_Status_Riverside_Renovation.pdf | yes |
 | How quickly must the plumber respond to an emergency? | Maintenance_Agreement_Coastal_Plumbing.pdf | Maintenance_Agreement_Coastal_Plumbing.pdf | yes |
 | What protects us if a supplier's goods are faulty? | Supplier_Agreement_Summit_Ridge_Electrical.pdf | Supplier_Agreement_Summit_Ridge_Electrical.pdf | yes |
-| What happens when the tenancy ends? | Office_Lease_Summary.docx | Office_Lease_Summary.docx | yes |
+| What happens when the tenancy ends? | Office_Lease_Summary.docx | public_irs_business_records.pdf | no |
 
 ## 4. Questions the documents can't answer
 
@@ -99,6 +99,6 @@ Top-1: **7/8** with openai:nomic-embed-text. These questions share few words wit
 
 ## Automated test suite
 
-`pytest` runs 180+ unit and end-to-end tests (parsing, OCR, extraction, grounding of AI values, QuickBooks read-only enforcement and OAuth token handling, reconciliation, approvals, tamper-evident log, API, guardrails). CI runs them on every push.
+`pytest` runs 220+ unit and end-to-end tests (parsing, OCR, extraction, grounding of AI values, QuickBooks read-only enforcement and OAuth token handling, reconciliation, approvals, tamper-evident log, API, guardrails). CI runs them on every push.
 
 See [ROADMAP.md](ROADMAP.md) for known limitations.

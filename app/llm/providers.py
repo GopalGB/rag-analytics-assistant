@@ -76,6 +76,34 @@ def is_local_url(url: str) -> bool:
     return ip.is_loopback or ip.is_private
 
 
+_TEXT_TOOL_CALL = re.compile(r"<tool_call>\s*(.*?)\s*(?:</tool_call>|$)", re.S)
+
+
+def text_tool_calls(content: str, allowed: set[str]) -> list[dict[str, Any]]:
+    """Recover tool calls that a local model wrote as text (Hermes/Qwen style `<tool_call>{...}</tool_call>`,
+    sometimes with doubled braces) when the server didn't turn them into native tool calls. Only names of
+    tools actually offered are accepted; anything unparseable is ignored."""
+    calls = []
+    for i, raw in enumerate(_TEXT_TOOL_CALL.findall(content or "")):
+        body = raw.strip()
+        while body.startswith("{{") and body.endswith("}}"):
+            body = body[1:-1].strip()
+        try:
+            obj = json.loads(body)
+        except json.JSONDecodeError:
+            continue
+        name = obj.get("name") if isinstance(obj, dict) else None
+        if name in allowed:
+            args = obj.get("arguments", obj.get("parameters", {}))
+            calls.append({"id": f"text_call_{i}", "type": "function",
+                          "function": {"name": name, "arguments": args if isinstance(args, str) else json.dumps(args)}})
+    return calls
+
+
+def strip_tool_markup(text: str) -> str:
+    return _TEXT_TOOL_CALL.sub("", text or "").strip()
+
+
 def _sse_data(resp: Any):
     """Yield parsed JSON payloads from a server-sent-events response (`data: {...}` lines)."""
     for raw in resp.iter_lines(decode_unicode=True):
@@ -210,12 +238,18 @@ class OpenAICompatLLM:
         messages: list[dict[str, Any]] = [{"role": "system", "content": system}, *history,
                                           {"role": "user", "content": question}]
         tools = _tool_specs(toolbox)
+        offered = {t["function"]["name"] for t in tools}
         call = (lambda m, t: self._call_stream(m, t, stream)) if stream else self._call
         for _ in range(max_iters):
             msg = call(messages, tools)
             tool_calls = msg.get("tool_calls") or []
             if not tool_calls:
-                return msg.get("content") or ""
+                tool_calls = text_tool_calls(msg.get("content") or "", offered)
+                if not tool_calls:
+                    return strip_tool_markup(msg.get("content") or "")
+                if stream:
+                    stream("reset", None)  # the streamed "<tool_call>" text was not an answer
+                msg = {**msg, "content": ""}
             messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": tool_calls})
             for tc in tool_calls:
                 fn = tc.get("function", {})
@@ -226,7 +260,7 @@ class OpenAICompatLLM:
                 result = toolbox.run(fn.get("name", ""), args)
                 messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "content": json.dumps(result, default=str)[:8000]})
         final = call(messages + [{"role": "user", "content": "Give your best final answer now."}], None)
-        return final.get("content") or ""
+        return strip_tool_markup(final.get("content") or "")
 
     def complete(self, system: str, prompt: str) -> str:
         return self._call([{"role": "system", "content": system}, {"role": "user", "content": prompt}]).get("content") or ""
