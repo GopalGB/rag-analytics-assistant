@@ -172,6 +172,7 @@ docs/                  install, operations, QuickBooks, security, dependencies, 
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Mac, Docker, or the hosted public demo (Vercel + Cloudflare Worker) |
 | [PUBLIC-DOCUMENTS.md](docs/PUBLIC-DOCUMENTS.md) | The real public documents in the sample data, with sources and licences |
 | [TEST-RESULTS.md](docs/TEST-RESULTS.md) | Measured results on the sample and unseen documents |
+| [LIVE-EVALUATION.md](docs/LIVE-EVALUATION.md) | End-to-end check of a running install over HTTP, with the latest measured run |
 | [ROADMAP.md](docs/ROADMAP.md) | Known limitations and proposed next stages |
 
 ## License
