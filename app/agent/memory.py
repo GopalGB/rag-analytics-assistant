@@ -25,3 +25,7 @@ class ConversationMemory:
     def clear(self, session_id: str) -> None:
         with self._lock:
             self._store.pop(session_id, None)
+
+    def session_count(self) -> int:
+        with self._lock:
+            return len(self._store)

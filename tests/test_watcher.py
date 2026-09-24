@@ -81,3 +81,17 @@ def test_reindex_drops_table_when_file_removed(tmp_path: Path):
         assert "sales" in engine.store.tables()  # surviving table untouched
     finally:
         engine.store.close()
+
+
+def test_reindex_reports_bad_file_without_losing_healthy_documents(tmp_path: Path):
+    d = tmp_path / "data"
+    d.mkdir()
+    (d / "healthy.md").write_text("Baseline is the normal expected volume.", encoding="utf-8")
+    engine = _engine(d, tmp_path / "w.duckdb")
+    try:
+        (d / "too-large.txt").write_bytes(b"x" * (ingest.MAX_FILE_BYTES + 1))
+        result = watcher.reindex(engine, str(d))
+        assert result["errors"] == [{"file": "too-large.txt", "error": "source too large: too-large.txt"}]
+        assert any(hit.file == "healthy.md" for hit in engine.retriever.search("normal expected volume", k=1))
+    finally:
+        engine.store.close()

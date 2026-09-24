@@ -5,6 +5,8 @@ Field names map case-insensitively to environment variables, e.g. `app_api_key` 
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,7 +15,7 @@ class Settings(BaseSettings):
 
     # --- App ---
     app_name: str = "RAG Analytics Assistant"
-    data_dir: str = "data/sample"
+    data_dir: str = str(Path(__file__).resolve().parents[1] / "data" / "sample")
     db_path: str = "storage/analytics.duckdb"
 
     # --- HTTP security ---
@@ -25,6 +27,9 @@ class Settings(BaseSettings):
     # Loopback exemption for the API key. Safe for local dev; set False behind a reverse proxy
     # (where every request appears to come from 127.0.0.1) so the key is always required.
     trust_loopback: bool = True
+    public_demo: bool = False
+    qbo_sandbox_access_token: str | None = None
+    qbo_realm_id: str | None = None
 
     # --- LLM provider (REQUIRED — this is an LLM-first assistant) ---
     # The assistant answers strictly through a live LLM (cloud API or local CLI). There is no

@@ -1,0 +1,9 @@
+SYNTHETIC INTERVIEW-DEMO DATA
+Invoice Number: INV-005
+Vendor: Fictional Vendor 5
+Invoice Date: 2026-10-05
+Currency: USD
+Quantity: 6
+Unit price: USD 125.50
+Total: USD 753.00
+Payment due: 2026-10-15

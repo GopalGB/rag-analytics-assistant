@@ -8,6 +8,7 @@ _REDACTION = "[redacted]"
 
 _LEAK_PATTERNS = [
     re.compile(r"sk-(?:ant-)?[A-Za-z0-9_-]{16,}"),  # OpenAI / Anthropic style keys
+    re.compile(r"gsk_[A-Za-z0-9_-]{16,}"),  # Groq keys
     re.compile(r"AKIA[0-9A-Z]{16}"),  # AWS access key ids
     re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"),  # GitHub tokens
     re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"),  # Slack tokens

@@ -1,12 +1,14 @@
 # RAG Analytics Assistant
 
+This repository is a working public prototype over synthetic interview-demo data. It is not a production deployment or a claim of measured latency.
+
 An **LLM-first, guardrailed** question-answering assistant over your own **tabular data** (CSV → DuckDB)
 and **documents** (Markdown/text → hybrid retrieval). Ask a question in plain English; the assistant
 decides whether to run a safe SQL query, search the documents, or both — then answers with its sources.
 
-It is **LLM-first**: every answer comes from a live model (a cloud API or a local CLI) running a
-native tool-calling loop — there is no deterministic "fake answer" mode. Drop new files into the data
-folder and it **re-embeds and re-indexes them automatically**.
+The public prototype uses Groq's OpenAI-compatible API with openai/gpt-oss-120b. Retrieval uses local
+hashing vectors plus BM25; these are not trained semantic embeddings. Drop new files into the data folder
+and the watcher re-indexes them automatically.
 
 > This is a clean, general-purpose reference implementation. It ships with **synthetic** demo data only.
 
@@ -45,7 +47,6 @@ flowchart LR
     API --> Guard[Input firewall]
     Guard --> Engine[Agent engine]
     Engine -->|tool-calling| LLM[LLM provider]
-    Engine -->|offline| Fallback[Deterministic fallback]
     Engine --> Tools
     Tools --> SQL[(DuckDB · safe SELECT)]
     Tools --> RAG[BM25 + vectors]
@@ -55,13 +56,15 @@ flowchart LR
 ## Quickstart
 
 ```bash
-make setup          # create venv + install deps
-make test           # run the test suite
-make run            # serve at http://127.0.0.1:8000
+make setup
+make sample-data
+make test
+make run
+python scripts/evaluate_demo.py --base-url http://127.0.0.1:8000 --runs 20 --output evaluation.json
 ```
 
-The repo ships with synthetic demo data already generated in `data/sample/`. Regenerate it any time
-with `make sample-data`.
+The repo ships with 15 synthetic files: 1 CSV, 8 invoice examples, 2 text PDFs, 1 DOCX, and reference
+documents. Supported inputs are CSV, Markdown/text, text PDFs, and DOCX; PDF extraction has no OCR.
 
 This assistant is **LLM-first**, so before `make run` copy `env.example` to `.env` and configure one
 provider (below) — without a model the server refuses to start. Then open <http://127.0.0.1:8000> and
@@ -116,12 +119,13 @@ tests/               pytest suite
 
 ## Security
 
-The deterministic safety layer holds even if the model misbehaves. SQL safety is enforced in three
-layers rather than a (bypassable) denylist: the DuckDB connection has **external file access
-disabled**, every query is **parsed and checked against a table allowlist**, and results are
-**hard-capped by an outer LIMIT**. Untrusted tool/document content is never treated as instructions,
-and outputs are scrubbed for leaked secrets/prompt. See `app/security/` and `app/data/store.py`.
+The safety layer limits common failure modes; it cannot guarantee that a provider or model never leaks
+content or is never manipulated. SQL safety uses disabled DuckDB external access, parsed table allowlists,
+read-only SELECT checks, and a returned-row cap (which does not bound aggregate work). Inputs are screened,
+tool/document content is treated as data, and outputs are scrubbed. See `app/security/` and `app/data/store.py`.
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+Further details: docs/ARCHITECTURE.md, docs/OPERATIONS.md, docs/MODELS-LICENSES-COSTS.md, and docs/DEPLOYMENT.md.

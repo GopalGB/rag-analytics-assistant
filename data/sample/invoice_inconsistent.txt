@@ -1,0 +1,6 @@
+SYNTHETIC INTERVIEW-DEMO DATA
+Invoice INV-INCONSISTENT
+Vendor: Fictional Vendor
+Quantity: 3
+Unit price: $10.00
+Total: $25.00

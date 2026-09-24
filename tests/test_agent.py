@@ -47,3 +47,33 @@ def test_memory_persists_turn(store, retriever, fake_tool_then_answer):
     engine = _engine(store, retriever, fake_tool_then_answer)
     engine.answer("s4", "Which region has the most revenue?")
     assert len(engine.memory.history("s4")) == 2  # user + assistant
+
+
+def test_uncited_model_answer_abstains(store, retriever):
+    class FreeAnswer:
+        def converse(self, **_kwargs):
+            return "Revenue is 999."
+
+    engine = _engine(store, retriever, llm=FreeAnswer())
+    out = engine.answer("s5", "what is total revenue?")
+    assert out["route"] == "abstained"
+    assert out["sources"] == []
+    assert "retrieved evidence" in out["text"].lower()
+
+
+def test_stateless_answer_never_creates_memory(store, retriever, fake_tool_then_answer):
+    engine = _engine(store, retriever, fake_tool_then_answer)
+    before = engine.memory.session_count()
+    engine.answer("public-request", "Which region has the most revenue?", remember=False)
+    assert engine.memory.session_count() == before
+
+
+def test_off_corpus_search_cannot_turn_unrelated_top_k_into_citations(store, retriever):
+    class SearchThenAnswer:
+        def converse(self, *, system, history, question, toolbox, max_iters):
+            toolbox.run("search_docs", {"query": "office rent 2032"})
+            return "The office rent is 42."
+
+    out = _engine(store, retriever, SearchThenAnswer()).answer("s6", "what is office rent in 2032?")
+    assert out["route"] == "abstained"
+    assert out["sources"] == []
