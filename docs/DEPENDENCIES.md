@@ -47,12 +47,20 @@ Exact versions: `requirements.lock.txt`. The application code is MIT-licensed (`
 | Intuit developer account + sandbox company | $0 | Needed for the live sandbox mode |
 | QuickBooks Online subscription | existing | The company's own subscription (production stage only) |
 | Intuit API usage (production) | check current terms | Intuit's App Partner Program meters some API usage for production apps; a read-only daily sync is low volume |
-| Cloud AI (optional, off by default) | pay-per-use | Only if approved; not needed with a local model |
+| Cloud AI (optional, off by default) | pay-per-use per provider | Only if approved. Set `LLM_PRICING` to see estimated spend per model in the **AI models** tab; routing simple tasks to the fast tier keeps costs down |
 | Support / maintenance | to be agreed | See ROADMAP.md |
+
+## Cloud AI providers (optional)
+
+Anthropic, OpenAI, Google Gemini, OpenRouter, Azure OpenAI, Groq, Mistral, DeepSeek, Together AI, xAI
+and AWS Bedrock are supported through their HTTP APIs (no extra SDKs, except `boto3` for Bedrock).
+Each is used only when its API key is set and `ALLOW_CLOUD_AI=true`. Review each provider's
+data-retention and training terms before approval; prefer business/API tiers that exclude training.
 
 ## Internet access needed
 
 - **Install and updates**: Homebrew, Python packages (PyPI), Ollama model downloads, `git pull`.
+- **Cloud AI, only if approved**: the API host of each provider you configured.
 - **Live QuickBooks sandbox mode only**: `appcenter.intuit.com`, `oauth.platform.intuit.com`,
   `developer.api.intuit.com` (revoke), `sandbox-quickbooks.api.intuit.com`.
 - Nothing else. Day-to-day use with default settings works fully offline.

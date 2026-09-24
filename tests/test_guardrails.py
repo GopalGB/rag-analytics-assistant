@@ -53,3 +53,11 @@ def test_scrub_redacts_secret_and_code():
     assert "sk-abcdef" not in out
     assert "print(1)" not in out
     assert "[redacted]" in out
+
+
+def test_scrub_redacts_registered_secret_values():
+    from app.security.output_filter import register_secret
+
+    register_secret("my-custom-provider-key-123456")
+    out = scrub("the key is my-custom-provider-key-123456 ok, and gsk_abcdefghijklmnopqrstuvwx")
+    assert "my-custom-provider-key" not in out and "gsk_" not in out

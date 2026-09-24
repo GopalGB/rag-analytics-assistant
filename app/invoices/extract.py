@@ -14,7 +14,6 @@ flagged so a person reviews them. Every extraction starts in `needs_review` stat
 from __future__ import annotations
 
 import difflib
-import json
 import re
 from dataclasses import dataclass, field
 from datetime import date
@@ -347,17 +346,6 @@ LLM_SYSTEM = (
 )
 
 
-def _parse_json(text: str) -> dict[str, Any]:
-    m = re.search(r"\{.*\}", text or "", re.S)
-    if not m:
-        return {}
-    try:
-        data = json.loads(m.group(0))
-    except json.JSONDecodeError:
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
 def _grounded(name: str, value: Any, text: str, date_order: str) -> bool:
     """Is the model's value actually printed on the document?"""
     if value in (None, ""):
@@ -463,12 +451,19 @@ def extract_invoice(
     date_order: str = "MDY",
 ) -> InvoiceExtraction:
     ex = extract_rules(text, known_suppliers, date_order)
-    complete = getattr(llm, "complete", None)
-    if callable(complete) and text.strip():
+    if llm is not None and text.strip():
+        # Type-safe call: the reply must validate as InvoiceFields (retried once with the errors).
+        from app.llm.schemas import InvoiceFields
+        from app.llm.structured import StructuredOutputError, generate
+
+        data: dict[str, Any] = {}
         try:
-            data = _parse_json(complete(LLM_SYSTEM, f"INVOICE TEXT:\n{text[:12000]}"))
+            data = generate(llm, InvoiceFields, LLM_SYSTEM, f"INVOICE TEXT:\n{text[:12000]}", retries=1).model_dump(
+                exclude_none=True
+            )
+        except StructuredOutputError:
+            ex.issues.append("The AI model's output did not match the invoice schema; used rule-based extraction only.")
         except Exception:
-            data = {}
             ex.issues.append("The AI model could not be reached; used rule-based extraction only.")
         if data:
             merge_llm(ex, data, text, date_order)

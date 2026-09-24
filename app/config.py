@@ -33,26 +33,54 @@ class Settings(BaseSettings):
     # (where every request appears to come from 127.0.0.1) so the key is always required.
     trust_loopback: bool = True
 
-    # --- AI model ---
+    # --- AI models ---
     # With no model the assistant still works: document questions return the most relevant source
     # passages (extractive mode) and invoices are extracted by local rules. Set True to refuse to
-    # start without a model.
+    # start without a model. Full guide: docs/LLM-ROUTING.md
     require_llm: bool = False
-    llm_provider: str = "auto"  # auto | ollama | openai | bedrock | cli | none
-    llm_timeout: int = 300
-    # Privacy gate: cloud AI (OpenAI, Bedrock, or a CLI that calls a cloud API) is refused unless the
-    # owner has approved it. Local models (Ollama, or an OpenAI-compatible server on localhost) are fine.
+    llm_provider: str = "auto"  # auto | <provider> (restrict to one) | none
+    llm_prefer: str = "cloud"  # when both are configured and allowed: cloud-first or local-first fallback order
+    llm_timeout: int = 120
+    # Model router: comma-separated `provider:model` specs in fallback order, per tier. Empty = derived
+    # from the API keys present (see app/llm/registry.py for per-provider defaults).
+    llm_models_fast: str | None = None  # e.g. "anthropic:claude-haiku-4-5-20251001,openai:gpt-4o-mini,ollama:qwen2.5:14b"
+    llm_models_strong: str | None = None  # e.g. "anthropic:claude-sonnet-5,openai:gpt-4o,ollama:qwen2.5:32b"
+    router_failure_threshold: int = 3  # consecutive failures before a model is skipped...
+    router_cooldown_seconds: int = 60  # ...for this long (circuit breaker)
+    llm_pricing: str | None = None  # JSON {"provider:model": [usd_per_M_input, usd_per_M_output]} for cost tracking
+    intent_model_fallback: bool = True  # ask the fast model when keyword routing is unsure
+
+    # --- Privacy router ---
+    # Master switch: cloud AI is refused unless the owner has approved it.
     allow_cloud_ai: bool = False
+    # Data classes that MAY be sent to a cloud model (documents, invoices, accounting, bank, personal).
+    cloud_allowed_data: str = "documents"
+    redact_pii: bool = True  # mask emails / phones / account numbers in anything sent to a cloud model
+    sensitive_paths: str = ""  # extra folder rules, e.g. "hr/=personal,payroll/=personal,finance/=accounting"
+
+    # --- Provider keys (add any; only providers with a key are used) ---
+    anthropic_api_key: str | None = None
+    anthropic_base_url: str = "https://api.anthropic.com"
+    openai_api_key: str | None = None
+    openai_base_url: str = "https://api.openai.com/v1"  # or any OpenAI-compatible server (LM Studio = local)
+    openai_model: str = "gpt-4o-mini"  # default fast model for openai
+    openai_model_strong: str | None = "gpt-4o"
+    gemini_api_key: str | None = None
+    openrouter_api_key: str | None = None
+    groq_api_key: str | None = None
+    mistral_api_key: str | None = None
+    deepseek_api_key: str | None = None
+    together_api_key: str | None = None
+    xai_api_key: str | None = None
+    azure_openai_api_key: str | None = None
+    azure_openai_endpoint: str | None = None  # https://<resource>.openai.azure.com
+    azure_openai_api_version: str = "2024-10-21"
+    bedrock_model_id: str | None = None  # AWS Bedrock (needs boto3 + AWS credentials in the environment)
+    aws_region: str = "us-east-1"
     # Ollama (local, recommended on a Mac Studio): https://ollama.com
     ollama_base_url: str = "http://127.0.0.1:11434/v1"
     ollama_model: str | None = "qwen2.5:14b"
-    # OpenAI (or any OpenAI-compatible /chat/completions endpoint, incl. local servers like LM Studio)
-    openai_api_key: str | None = None
-    openai_base_url: str = "https://api.openai.com/v1"
-    openai_model: str = "gpt-4o-mini"
-    # AWS Bedrock (needs boto3 + AWS credentials in the environment)
-    bedrock_model_id: str | None = None
-    aws_region: str = "us-east-1"
+    ollama_model_strong: str | None = None  # e.g. qwen2.5:32b on a 64 GB Mac
     # CLI backend: a shell command that reads the prompt on stdin and writes the completion to stdout.
     llm_cli_command: str | None = None
     llm_cli_timeout: int = 120

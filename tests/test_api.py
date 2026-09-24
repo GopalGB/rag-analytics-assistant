@@ -204,3 +204,14 @@ def test_qbo_disconnect_then_resync(client):
     assert "qbo_bills" not in client.get("/health").json()["tables"]
     r = client.post("/qbo/sync")
     assert r.status_code == 200 and r.json()["counts"]["qbo_bills"] == 8
+
+
+def test_router_view_and_routing_trace(client):
+    r = client.get("/router").json()
+    assert r["tiers"]["strong"] and r["models"][0]["local"] is True
+    assert r["privacy"]["cloud_ai_allowed"] is False
+    assert any(p["provider"] == "anthropic" for p in r["providers"])
+    body = client.post("/chat", json={"question": "When does the lease expire?", "session_id": "rt"}).json()
+    assert body["routing"]["intent"] == "documents"
+    assert body["routing"]["model"].startswith("cli:") and body["routing"]["model_local"] is True
+    assert body["routing"]["privacy"]["local_only"] is True  # cloud AI not approved in this config

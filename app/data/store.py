@@ -130,9 +130,23 @@ class DataStore:
     def _strip_comments(sql: str) -> str:
         return _COMMENT_LINE.sub(" ", _COMMENT_BLOCK.sub(" ", sql))
 
+    def referenced_tables(self, sql: str) -> set[str]:
+        """Real tables a query reads (CTE names excluded). Raises UnsafeQueryError if unparseable."""
+        referenced, ctes = self._parse_tables(self._strip_comments(sql).strip().rstrip(";"))
+        return {t.lower() for t in referenced if t.lower() not in ctes}
+
     def _assert_tables_allowed(self, sql: str) -> None:
         """Parse with DuckDB and require every referenced table to be a known, non-internal table
         (or a CTE defined in the query). Rejects direct file paths, internal/temp tables, unknowns."""
+        referenced, ctes = self._parse_tables(sql)
+        allowed = {t.lower() for t in self.tables()} | ctes
+        for name in referenced:
+            if name.lower() in ctes:
+                continue
+            if name.startswith("_") or name.lower() not in allowed:
+                raise UnsafeQueryError(f"query references unknown or internal table: {name!r}")
+
+    def _parse_tables(self, sql: str) -> tuple[list[str], set[str]]:
         try:
             with self._lock:
                 serialized = self.con.execute("SELECT json_serialize_sql(?)", [sql]).fetchone()[0]
@@ -161,12 +175,7 @@ class DataStore:
                     walk(value)
 
         walk(ast)
-        allowed = {t.lower() for t in self.tables()} | ctes
-        for name in referenced:
-            if name.lower() in ctes:
-                continue
-            if name.startswith("_") or name.lower() not in allowed:
-                raise UnsafeQueryError(f"query references unknown or internal table: {name!r}")
+        return referenced, ctes
 
     def close(self) -> None:
         with self._lock:

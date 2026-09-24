@@ -134,6 +134,7 @@
     <button data-tab="quickbooks">QuickBooks</button>
     <button data-tab="approvals">Approvals <span class="count" id="n-approvals" hidden></span></button>
     <button data-tab="activity">Activity log</button>
+    <button data-tab="models">AI models</button>
     <button data-tab="privacy">Privacy &amp; security</button>
     <div class="foot">Runs locally. External actions need your approval.</div>
   </nav>
@@ -221,6 +222,20 @@
       <div class="card"><div class="table-wrap"><table id="audit-table"></table></div></div>
     </section>
 
+    <!-- AI MODELS -->
+    <section id="tab-models">
+      <h2>AI models &amp; routing</h2>
+      <p class="sub">Which models answer, in what order they are tried, and how each one is performing. Add providers by setting their API keys in <code>.env</code> (see docs/LLM-ROUTING.md).</p>
+      <div class="card"><div id="router-note" class="note"></div><div id="router-privacy" class="small" style="margin-top:10px"></div></div>
+      <div class="grid2">
+        <div class="card"><h3 style="margin-top:0">Strong tier <span class="small muted">accounting, drafting</span></h3><ol id="tier-strong" class="small"></ol></div>
+        <div class="card"><h3 style="margin-top:0">Fast tier <span class="small muted">documents, routing, invoice reading</span></h3><ol id="tier-fast" class="small"></ol></div>
+      </div>
+      <div class="card"><h3 style="margin-top:0">Usage since start</h3><div class="table-wrap"><table id="models-table"></table></div></div>
+      <div class="card"><h3 style="margin-top:0">Providers</h3><div class="table-wrap"><table id="providers-table"></table></div>
+        <details><summary>Configuration notes</summary><ul id="router-notes" class="small"></ul></details></div>
+    </section>
+
     <!-- PRIVACY -->
     <section id="tab-privacy">
       <h2>Privacy &amp; security</h2>
@@ -304,7 +319,8 @@ async function refreshHealth() {
     const h = await api("/health");
     $("#app-name").textContent = h.app_name;
     const llm = $("#chip-llm");
-    llm.textContent = h.llm_enabled ? `AI: ${h.llm} (${h.llm_local ? "local" : "cloud"})` : "AI: off · quoting sources only";
+    llm.textContent = h.llm_enabled ? `AI: ${h.llm} (${h.llm_local ? "local" : "cloud"})${h.models > 1 ? ` +${h.models - 1} more` : ""}` : "AI: off · quoting sources only";
+    llm.style.cursor = "pointer"; llm.onclick = () => show("models");
     llm.className = "chip " + (h.llm_enabled ? (h.llm_local ? "ok" : "warn") : "warn");
     llm.title = h.llm_note || "";
     const ocr = $("#chip-ocr"); ocr.textContent = "OCR: " + h.ocr; ocr.className = "chip " + (h.ocr.startsWith("tesseract") ? "ok" : "warn");
@@ -334,7 +350,30 @@ function addMsg(role, text, payload) {
   const wrap = el("div", { class: "msg " + role }, bubble);
   if (payload) {
     const routeLabel = { agent: ["AI answer", "ok"], extractive: ["Quoted from sources · no AI", "warn"], refused: ["Refused", "bad"], greeting: ["", ""] }[payload.route] || [payload.route, "info"];
-    if (routeLabel[0]) wrap.append(el("div", { class: "meta" }, el("span", { class: "pill " + routeLabel[1], text: routeLabel[0] })));
+    const meta = el("div", { class: "meta" });
+    if (routeLabel[0]) meta.append(el("span", { class: "pill " + routeLabel[1], text: routeLabel[0] }));
+    const rt = payload.routing;
+    if (rt) {
+      if (rt.intent) meta.append(el("span", { class: "pill info", title: `routed by ${rt.method}: ${rt.reason || ""}`, text: rt.intent }));
+      if (rt.model) meta.append(el("span", { class: "pill " + (rt.model_local ? "ok" : "warn"), text: `${rt.model} · ${rt.model_local ? "local" : "cloud"}` }));
+      const pv = rt.privacy || {};
+      if (pv.local_only && pv.reasons && pv.reasons.length) meta.append(el("span", { class: "pill ok", title: pv.reasons.join("; "), text: "kept on this machine" }));
+      if (pv.redactions) meta.append(el("span", { class: "pill info", text: `${pv.redactions} detail(s) masked for cloud` }));
+      if (pv.withheld_passages) meta.append(el("span", { class: "pill info", text: `${pv.withheld_passages} sensitive passage(s) withheld from cloud` }));
+      if (rt.fallbacks) meta.append(el("span", { class: "pill warn", text: `${rt.fallbacks} fallback(s)` }));
+    }
+    if (payload.checks && payload.checks.unverified_citations && payload.checks.unverified_citations.length)
+      meta.append(el("span", { class: "pill bad", title: payload.checks.unverified_citations.join(", "), text: "citation not in retrieved sources" }));
+    if (meta.childNodes.length) wrap.append(meta);
+    if (rt && rt.attempts && rt.attempts.length) {
+      const d = el("details", {}, el("summary", { text: "How this was answered" }));
+      const lines = [`Task: ${rt.intent || "-"} (${rt.method || "-"}) · tier: ${rt.tier || "-"} · tools: ${(rt.tools || []).join(", ") || "-"}`];
+      if (rt.privacy && rt.privacy.reasons && rt.privacy.reasons.length) lines.push("Privacy: " + rt.privacy.reasons.join("; "));
+      rt.attempts.forEach((a, i) => lines.push(`${i + 1}. ${a.model} (${a.local ? "local" : "cloud"}) — ${a.ok ? "answered" : "failed: " + a.error} · ${a.ms} ms · ${a.input_tokens}+${a.output_tokens} tokens${a.cost_usd ? " · $" + a.cost_usd.toFixed(4) : ""}`));
+      (rt.tool_calls || []).forEach((t) => lines.push(`tool ${t.tool}: ${t.ok ? "ok" : t.error}`));
+      d.append(el("pre", { text: lines.join("\n") }));
+      wrap.append(d);
+    }
     if (payload.sources && payload.sources.length) {
       const box = el("div", { class: "sources" });
       payload.sources.slice(0, 6).forEach((s) => box.append(el("div", { class: "source" },
@@ -597,6 +636,35 @@ async function loadPrivacy() {
   $("#controls").replaceChildren(...p.controls.map((c) => el("li", { text: c })));
 }
 loaders.privacy = loadPrivacy;
+
+// ---------------- AI MODELS
+async function loadModels() {
+  const r = await api("/router");
+  $("#router-note").textContent = r.note;
+  const pv = r.privacy;
+  $("#router-privacy").textContent = `Cloud AI: ${pv.cloud_ai_allowed ? "allowed" : "blocked"} · data that may go to cloud models: ${pv.cloud_allowed_data.join(", ") || "none"} · PII masking: ${pv.redact_pii ? "on" : "off"} · local model: ${pv.local_model_available ? "available" : "not running"}`;
+  const byName = Object.fromEntries(r.models.map((m) => [m.model, m]));
+  for (const tier of ["strong", "fast"]) {
+    const ol = $("#tier-" + tier); ol.replaceChildren();
+    if (!r.tiers[tier].length) ol.append(el("li", { class: "muted", text: "none configured" }));
+    r.tiers[tier].forEach((name) => { const m = byName[name] || {}; ol.append(el("li", {}, name, " ", el("span", { class: "pill " + (m.local ? "ok" : "warn"), text: m.local ? "local" : "cloud" }), m.circuit_open ? el("span", { class: "pill bad", text: "paused after failures" }) : "")); });
+  }
+  table($("#models-table"), [
+    { label: "Model", key: "model" },
+    { label: "Where", render: (m) => el("span", { class: "pill " + (m.local ? "ok" : "warn"), text: m.local ? "local" : "cloud" }) },
+    { label: "Calls", num: true, key: "calls" }, { label: "Failures", num: true, key: "failures" },
+    { label: "Avg ms", num: true, render: (m) => m.avg_ms ?? "—" },
+    { label: "Tokens in/out", num: true, render: (m) => `${m.input_tokens.toLocaleString()} / ${m.output_tokens.toLocaleString()}` },
+    { label: "Est. cost", num: true, render: (m) => m.local ? "$0" : (m.priced ? "$" + m.cost_usd.toFixed(4) : "set LLM_PRICING") },
+    { label: "Last error", render: (m) => el("span", { class: "small muted", text: m.last_error || "" }) },
+  ], r.models);
+  table($("#providers-table"), [
+    { label: "Provider", key: "label" }, { label: "Spec prefix", render: (p) => p.provider + ":" },
+    { label: "API key", render: (p) => p.configured === null ? el("span", { class: "muted", text: "n/a" }) : el("span", { class: "pill " + (p.configured ? "ok" : ""), text: p.configured ? "set" : "not set" }) },
+  ], r.providers);
+  $("#router-notes").replaceChildren(...r.notes.map((n) => el("li", { text: n })));
+}
+loaders.models = loadModels;
 
 // ---------------- boot
 refreshHealth(); setInterval(refreshHealth, 15000);

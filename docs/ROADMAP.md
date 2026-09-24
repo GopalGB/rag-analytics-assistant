@@ -26,6 +26,14 @@
   reliably issue SQL queries on its own. Table questions need the recommended larger model.
   **End-to-end AI answers should be re-verified on the Mac Studio** (`scripts/evaluate.py --with-ai`
   plus the demo questions).
+- The cloud provider integrations (Claude, OpenAI, Gemini, OpenRouter, Azure, Groq, Mistral, DeepSeek,
+  Together, xAI) are implemented against their documented APIs and tested with recorded/fake HTTP
+  responses. They have not yet been run against live accounts. Do a smoke test with each key you
+  add (ask a document question and check the **AI models** tab). Default model names are placeholders
+  to be replaced with the exact models on your account.
+- Data-class and PII detection is rule-based (folders, table names, patterns). It errs on the side of
+  keeping data local, but it isn't a full DLP system; review `CLOUD_ALLOWED_DATA` and
+  `SENSITIVE_PATHS` with the owner before enabling cloud AI on real data.
 - Without a model the assistant still works (extraction, reconciliation, quoted passages) but doesn't
   compose answers.
 

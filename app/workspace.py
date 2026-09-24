@@ -4,7 +4,8 @@
                      └──► spreadsheets ──► SQL tables
                      └──► invoices ──► field extraction + checks ──► `invoices` table ──► human review
     QuickBooks (read-only) ──► `qbo_*` tables ──► reconciliation against invoices ──► discrepancies
-    questions ──► guardrails ──► model + tools (or extractive fallback) ──► cited answer
+    questions ──► guardrails ──► task router ──► privacy router ──► model router (fallback chain)
+              ──► model + typed tools (or extractive fallback) ──► citation check ──► cited answer
     external actions ──► approval queue (a person decides; nothing executes in this prototype)
     everything above ──► hash-chained activity log
 """
@@ -19,7 +20,6 @@ from typing import Any
 
 from app.accounting import qbo_sync, reconcile, reports
 from app.agent.engine import AgentEngine
-from app.agent.llm import select_llm
 from app.agent.memory import ConversationMemory
 from app.approvals import ApprovalQueue
 from app.audit import AuditLog
@@ -30,9 +30,14 @@ from app.documents.ocr import OCREngine
 from app.documents.parsers import DOC_SUFFIXES, ParseCache
 from app.integrations.quickbooks import MockQuickBooks, QuickBooksOnline, TokenStore
 from app.invoices.registry import InvoiceRegistry, is_invoice_document
+from app.llm.intent import IntentRouter
+from app.llm.privacy import PrivacyPolicy, PrivacyRouter
+from app.llm.registry import PROVIDERS, build_chain
+from app.llm.router import ModelRouter, parse_pricing
 from app.rag.embeddings import EmbeddingService
 from app.rag.retriever import Retriever
 from app.security import InputGuard
+from app.security.output_filter import register_secret
 
 UPLOAD_SUFFIXES = DOC_SUFFIXES | {".csv", ".xlsx"}
 
@@ -55,7 +60,14 @@ class Workspace:
         self.last_qbo_sync: str | None = None
         self.last_reindex: str | None = None
 
-        self.llm, self.llm_note = select_llm(settings)
+        for field_name in ("anthropic_api_key", "openai_api_key", "gemini_api_key", "openrouter_api_key", "groq_api_key",
+                           "mistral_api_key", "deepseek_api_key", "together_api_key", "xai_api_key",
+                           "azure_openai_api_key", "qbo_client_secret", "app_api_key"):
+            register_secret(getattr(settings, field_name, None))
+        self.router = self._build_router()
+        self.llm = self.router.primary
+        self.llm_note = self._router_note()
+        self.privacy = PrivacyRouter(PrivacyPolicy.from_settings(settings))
         if self.llm is None and settings.require_llm:
             raise LLMNotConfiguredError(f"REQUIRE_LLM is set but no AI model is available: {self.llm_note}")
 
@@ -74,7 +86,10 @@ class Workspace:
             store=self.store,
             retriever=Retriever(embeddings),
             guard=InputGuard(max_input_chars=settings.max_input_chars),
-            llm=self.llm,
+            llm=None,
+            router=self.router,
+            intents=IntentRouter(model_fallback=settings.intent_model_fallback),
+            privacy=self.privacy,
             memory=ConversationMemory(max_turns=settings.history_turns),
             max_tool_iterations=settings.max_tool_iterations,
             max_sql_rows=settings.max_sql_rows,
@@ -88,9 +103,55 @@ class Workspace:
             actor="system",
             model=getattr(self.llm, "name", None),
             model_local=getattr(self.llm, "is_local", None),
+            tiers=self.router.describe()["tiers"],
+            cloud_ai_allowed=settings.allow_cloud_ai,
+            cloud_allowed_data=sorted(self.privacy.policy.cloud_allowed),
             qbo_mode=settings.qbo_mode,
             ocr=self.ocr.name,
         )
+
+    # ---- AI models -------------------------------------------------------
+    def _build_router(self) -> ModelRouter:
+        s = self.settings
+        fast, notes_fast = build_chain(s, "fast")
+        strong, notes_strong = build_chain(s, "strong")
+        return ModelRouter(
+            {"fast": fast, "strong": strong},
+            notes=list(dict.fromkeys(notes_fast + notes_strong)),
+            failure_threshold=s.router_failure_threshold,
+            cooldown_seconds=s.router_cooldown_seconds,
+            pricing=parse_pricing(s.llm_pricing),
+        )
+
+    def _router_note(self) -> str:
+        r = self.router
+        if not r.available:
+            blocked = [n for n in r.notes if "explicit approval" in n]
+            if blocked:
+                return blocked[0]
+            return "No AI model configured. Add an API key (docs/LLM-ROUTING.md) or install Ollama for a local model."
+        tiers = r.describe()["tiers"]
+        return (f"{len(r.models())} model(s). Strong: {' → '.join(tiers['strong']) or '-'}. "
+                f"Fast: {' → '.join(tiers['fast']) or '-'}.")
+
+    def router_view(self) -> dict[str, Any]:
+        s = self.settings
+        pol = self.privacy.policy
+        return {
+            **self.router.describe(),
+            "note": self.llm_note,
+            "providers": [
+                {"provider": name, "label": info.label,
+                 "configured": bool(getattr(s, info.key_setting, None)) if info.key_setting else None}
+                for name, info in PROVIDERS.items()
+            ],
+            "privacy": {
+                "cloud_ai_allowed": pol.allow_cloud,
+                "cloud_allowed_data": sorted(pol.cloud_allowed),
+                "redact_pii": pol.redact_pii,
+                "local_model_available": self.router.has_local(),
+            },
+        }
 
     # ---- QuickBooks ----------------------------------------------------
     def _build_qbo(self):
@@ -148,7 +209,11 @@ class Workspace:
 
     # ---- indexing --------------------------------------------------------
     def _rebuild_invoices(self) -> None:
-        llm = self.llm if self.settings.invoice_ai_assist else None
+        llm = None
+        if self.settings.invoice_ai_assist:
+            # Invoice text goes to a cloud model only if the privacy policy allows invoice data.
+            local_only = not self.privacy.policy.cloud_ok_for("invoices")
+            llm = self.router.bound("fast", local_only=local_only, purpose="invoice_extraction")
         self.invoices.build(self.engine.documents, llm=llm, known_suppliers=self._known_vendors())
         self.store.load_dataframe("invoices", self.invoices.dataframe())
 
@@ -238,8 +303,11 @@ class Workspace:
 
     def privacy_report(self) -> dict[str, Any]:
         """What runs where, and what (if anything) leaves this machine — derived from live config."""
-        llm = self.llm
-        llm_local = bool(llm is not None and getattr(llm, "is_local", False))
+        models = self.router.models()
+        local_models = [m.name for m in models if getattr(m, "is_local", False)]
+        cloud_models = [m.name for m in models if not getattr(m, "is_local", False)]
+        pol = self.privacy.policy
+        allowed = ", ".join(sorted(pol.cloud_allowed)) or "nothing"
         rows = [
             {
                 "function": "Document storage, search index and database",
@@ -261,11 +329,21 @@ class Workspace:
                 "leaves_machine": "Nothing",
             },
             {
-                "function": "AI model: " + (getattr(llm, "name", None) or "none (extractive mode)"),
-                "runs": "local" if (llm is None or llm_local) else "cloud",
-                "internet": llm is not None and not llm_local,
-                "leaves_machine": "Nothing" if (llm is None or llm_local)
-                else "Questions, retrieved passages and query results are sent to the model provider",
+                "function": "Local AI models: " + (", ".join(local_models) or "none running"),
+                "runs": "local",
+                "internet": False,
+                "leaves_machine": "Nothing",
+            },
+            {
+                "function": "Cloud AI models: " + (", ".join(cloud_models) or "none (blocked or not configured)"),
+                "runs": "cloud" if cloud_models else "-",
+                "internet": bool(cloud_models),
+                "leaves_machine": (
+                    f"Only requests whose data class is allowed ({allowed}): the question, relevant passages "
+                    f"and tool results{', with emails/phones/account numbers masked' if pol.redact_pii else ''}. "
+                    "Accounting, invoice and bank data, and anything with high-risk identifiers, is routed to a "
+                    "local model instead" if cloud_models else "Nothing"
+                ),
             },
             {
                 "function": f"QuickBooks ({self.qbo.mode if self.qbo else 'off'}, read-only)",
@@ -291,6 +369,8 @@ class Workspace:
                 "QuickBooks access is read-only in code (GET queries on an allowlist); tokens can be revoked.",
                 "Every question, upload, review, sync and approval is written to a hash-chained activity log.",
                 "No data is used for model training: local models run offline; cloud use is off unless approved.",
+                "Privacy router: sensitive data classes and high-risk identifiers are only ever sent to local models; "
+                "the tool layer blocks cloud models from reading them and withholds earlier local-only turns.",
                 "Encryption at rest: keep the data and storage folders on a FileVault-encrypted disk.",
             ],
         }

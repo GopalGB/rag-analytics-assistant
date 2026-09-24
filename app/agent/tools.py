@@ -1,115 +1,94 @@
-"""Tool schemas the model can call, and the ToolBox that executes them safely.
+"""Tools the model can call, and the ToolBox that executes them safely.
 
 - run_sql         read-only SELECT over the local tables (spreadsheets, extracted invoices, QuickBooks copy)
 - search_docs     hybrid retrieval over documents; every hit carries file + page for citation
 - propose_action  queue an external action (email, QuickBooks entry, task) for HUMAN approval — the
                   model can never execute anything itself
+
+Type-safe: tool schemas are generated from the Pydantic models in `app.llm.schemas`, and every call's
+arguments are validated against the same models before anything runs; invalid calls are answered with
+the validation error so the model can correct itself.
+
+Per request the ToolBox is restricted to the pipeline's tools (task router) and, while a cloud model is
+active, to the data classes the privacy policy allows (privacy guard).
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from pydantic import ValidationError
+
 from app.data.store import DataStore, UnsafeQueryError
+from app.llm.privacy import PrivacyGuard
+from app.llm.schemas import TOOL_ARGS, ProposeActionArgs, RunSqlArgs, SearchDocsArgs, tool_spec
 from app.rag.retriever import Retriever
 
-TOOLS: list[dict[str, Any]] = [
-    {
-        "type": "function",
-        "function": {
-            "name": "run_sql",
-            "description": (
-                "Run ONE read-only DuckDB SELECT over the available tables and return rows. "
-                "No DDL/DML, no file-reading functions, single statement only."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "sql": {
-                        "type": "string",
-                        "description": "A single DuckDB SELECT statement.",
-                    }
-                },
-                "required": ["sql"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_docs",
-            "description": "Retrieve the most relevant document passages for a natural-language query.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "What to look for in the documents.",
-                    },
-                    "k": {
-                        "type": "integer",
-                        "description": "How many passages (default 5).",
-                    },
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "propose_action",
-            "description": (
-                "Queue an external action (e.g. sending an email, recording a bill in QuickBooks, a "
-                "follow-up task) for a person to approve. Nothing is executed; use this only when the "
-                "user asks for such an action."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "action_type": {
-                        "type": "string",
-                        "enum": ["draft_email", "record_bill", "follow_up_task", "other"],
-                    },
-                    "title": {"type": "string", "description": "Short summary of the action."},
-                    "details": {"type": "string", "description": "Full draft / details for the approver."},
-                },
-                "required": ["action_type", "title", "details"],
-            },
-        },
-    },
-]
+ALL_TOOLS = tuple(TOOL_ARGS)
+TOOLS: list[dict[str, Any]] = [tool_spec(n) for n in ALL_TOOLS]  # kept for callers of the old constant
 
 
 class ToolBox:
-    """Executes tool calls and records artifacts (SQL, rows, sources) for the final payload."""
+    """Executes tool calls and records artifacts (SQL, rows, sources, actions) for the final payload."""
 
-    def __init__(self, store: DataStore, retriever: Retriever, max_rows: int = 200, approvals: Any = None):
+    def __init__(
+        self,
+        store: DataStore,
+        retriever: Retriever,
+        max_rows: int = 200,
+        approvals: Any = None,
+        allowed_tools: tuple[str, ...] | None = None,
+        privacy: PrivacyGuard | None = None,
+    ):
         self.store = store
         self.retriever = retriever
         self.max_rows = max_rows
         self.approvals = approvals
+        self.allowed_tools = tuple(t for t in (allowed_tools or ALL_TOOLS) if t in TOOL_ARGS)
+        if approvals is None:
+            self.allowed_tools = tuple(t for t in self.allowed_tools if t != "propose_action")
+        self.privacy = privacy
         self.last_sql: str | None = None
         self.columns: list[str] = []
         self.rows: list[tuple] = []
         self.sources: list[dict[str, Any]] = []
         self.actions: list[dict[str, Any]] = []
+        self.calls: list[dict[str, Any]] = []  # tool-call log for the trace
+
+    def tool_specs(self) -> list[dict[str, Any]]:
+        return [tool_spec(n) for n in self.allowed_tools]
 
     def run(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
-        if name == "run_sql":
-            return self._run_sql(args.get("sql", ""))
-        if name == "search_docs":
-            try:
-                k = int(args.get("k", 5))
-            except (TypeError, ValueError):
-                k = 5
-            return self._search_docs(str(args.get("query", "")), k)
-        if name == "propose_action":
-            return self._propose_action(args)
-        return {"error": f"unknown tool: {name}"}
+        if name not in TOOL_ARGS:
+            return self._log(name, {"error": f"unknown tool: {name}"})
+        if name not in self.allowed_tools:
+            return self._log(name, {"error": f"tool '{name}' is not available for this request"})
+        try:
+            parsed = TOOL_ARGS[name].model_validate(args or {})
+        except ValidationError as exc:
+            errs = "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors()[:5])
+            return self._log(name, {"error": f"invalid arguments: {errs}. Fix them and call again."})
+        if isinstance(parsed, RunSqlArgs):
+            return self._log(name, self._run_sql(parsed.sql))
+        if isinstance(parsed, SearchDocsArgs):
+            return self._log(name, self._search_docs(parsed.query, parsed.k))
+        return self._log(name, self._propose_action(parsed))
+
+    def _log(self, name: str, result: dict[str, Any]) -> dict[str, Any]:
+        self.calls.append({"tool": name, "ok": "error" not in result, "error": result.get("error")})
+        return result
 
     def _run_sql(self, sql: str) -> dict[str, Any]:
         self.last_sql = sql
+        if self.privacy and self.privacy.cloud:
+            try:
+                tables = self.store.referenced_tables(sql)
+            except UnsafeQueryError as exc:
+                return {"error": f"unsafe query rejected: {exc}"}
+            blocked = sorted(t for t in tables if not self.privacy.table_allowed(t))
+            if blocked:
+                return {"error": f"blocked by privacy policy: {', '.join(blocked)} must stay on this machine and "
+                                 "cannot be sent to a cloud model. Say that this needs the local model."}
         try:
             columns, rows = self.store.run_select(sql, max_rows=self.max_rows)
         except UnsafeQueryError as exc:
@@ -121,15 +100,19 @@ class ToolBox:
         return {"columns": columns, "row_count": len(rows), "rows": preview}
 
     def _search_docs(self, query: str, k: int) -> dict[str, Any]:
-        hits = self.retriever.search(query, k=max(1, min(k, 10)))
+        hits = self.retriever.search(query, k=k)
+        results = []
         for h in hits:
+            if self.privacy and not self.privacy.file_allowed(h.file):
+                self.privacy.withheld += 1
+                continue
             self.add_source(h)
-        return {
-            "results": [
-                {"source": cite(h.file, h.page), "file": h.file, "page": h.page, "score": h.score, "text": h.text}
-                for h in hits
-            ]
-        }
+            text = self.privacy.outgoing(h.text) if self.privacy else h.text
+            results.append({"source": cite(h.file, h.page), "file": h.file, "page": h.page, "score": h.score, "text": text})
+        out: dict[str, Any] = {"results": results}
+        if len(results) < len(hits):
+            out["note"] = f"{len(hits) - len(results)} passage(s) withheld: that data must stay on this machine."
+        return out
 
     def add_source(self, hit: Any) -> None:
         if any(s["file"] == hit.file and s["chunk_id"] == hit.chunk_id for s in self.sources):
@@ -145,15 +128,8 @@ class ToolBox:
             }
         )
 
-    def _propose_action(self, args: dict[str, Any]) -> dict[str, Any]:
-        if self.approvals is None:
-            return {"error": "approvals are not available"}
-        item = self.approvals.propose(
-            str(args.get("action_type", "other")),
-            str(args.get("title", "")),
-            str(args.get("details", "")),
-            proposed_by="assistant",
-        )
+    def _propose_action(self, args: ProposeActionArgs) -> dict[str, Any]:
+        item = self.approvals.propose(args.action_type, args.title, args.details, proposed_by="assistant")
         self.actions.append(item)
         return {"status": "queued_for_human_approval", "id": item["id"], "note": "Nothing has been sent or changed."}
 

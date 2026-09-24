@@ -333,6 +333,13 @@ def decide(item_id: str, body: DecisionIn, request: Request) -> dict:
     return item
 
 
+# --------------------------------------------------------------------------- AI routing
+@app.get("/router")
+def router_view(request: Request) -> dict:
+    """Configured models per tier, fallback order, health/circuit state, usage and cost, privacy policy."""
+    return _ws(request).router_view()
+
+
 # --------------------------------------------------------------------------- audit + privacy
 @app.get("/audit")
 def audit(request: Request, limit: int = 200) -> dict:

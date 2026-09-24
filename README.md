@@ -30,12 +30,26 @@ OpenAI-compatible server. On the Mac Studio the recommended model is Qwen 2.5 14
 | Flag missing or uncertain information instead of inventing answers | Missing fields, ambiguous dates (`05/12/2026`), totals that don't add up, duplicates, OCR input and AI/rule disagreements are all flagged; every extraction starts as *needs review*. Questions the documents can't answer get "I couldn't find this". | Invoices, Ask |
 | Useful results on documents it has not processed before | `data/unseen_invoices/` holds invoices in new layouts (incl. a phone-photo PNG). Upload them live: they're read, extracted and reconciled on the spot. | Documents → upload |
 | External actions need explicit approval | The assistant can only *propose* an email or a QuickBooks entry. A named person approves or rejects it; in this prototype approved actions are logged but not executed. | **Approvals** tab |
+| Use any AI provider, safely | Add any API key (Claude, OpenAI, Gemini, OpenRouter, Azure, Groq, Mistral, DeepSeek, Together, xAI, Bedrock) and/or local Ollama. A **task router** picks the pipeline per request, a **model router** handles fast/strong tiers, fallback, circuit breaking, tokens and cost, and a **privacy router** keeps accounting, invoice, bank and high-risk personal data on local models and masks PII sent to the cloud. Model outputs and tool calls are **type-checked** (Pydantic). | **AI models** tab, answer trace, [docs/LLM-ROUTING.md](docs/LLM-ROUTING.md) |
 | Activity logs, access control, revocation, local processing | Tamper-evident (hash-chained) activity log; binds to 127.0.0.1 with optional API key; QuickBooks disconnect revokes tokens and deletes the local copy; a live page states what runs where and what leaves the machine. | **Activity log**, **Privacy & security** tabs |
 
 Measured results on the synthetic set (from `make evaluate`, see [docs/TEST-RESULTS.md](docs/TEST-RESULTS.md)):
 11/11 invoices extracted with every field correct (including 3 unseen layouts, a scan and a photo),
 5/5 planted problems flagged, 10/10 search questions return the right document first, 3/3 unanswerable
 questions answered "not found", 8/8 invoices reconciled correctly against QuickBooks.
+
+## Using your own API key
+
+```bash
+cp env.example .env
+# in .env:
+ALLOW_CLOUD_AI=true
+ANTHROPIC_API_KEY=...        # and/or OPENAI_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, ...
+make run
+```
+
+Details, per-provider settings, fallback chains, cost tracking and the privacy policy:
+[docs/LLM-ROUTING.md](docs/LLM-ROUTING.md).
 
 ## Quick start
 
@@ -64,9 +78,9 @@ Full Mac Studio instructions: [docs/INSTALL-MAC.md](docs/INSTALL-MAC.md). A 10-m
 | Document storage, search index, database | local | no | nothing |
 | OCR for scanned documents (Tesseract) | local | no | nothing |
 | AI model (Ollama, e.g. Qwen 2.5) | local | no | nothing |
+| Cloud AI (any provider you add a key for) | **blocked** until `ALLOW_CLOUD_AI=true` | yes | only data classes you allow (default: documents), with emails/phones/account numbers masked; accounting, invoice and bank data stay local |
 | QuickBooks — offline test company (default) | local fixture | no | nothing |
 | QuickBooks — live Intuit sandbox (optional) | Intuit API | yes | OAuth sign-in + read-only queries; data is downloaded, never uploaded |
-| Cloud AI (OpenAI, AWS Bedrock) | **blocked** | yes | only if the owner sets `ALLOW_CLOUD_AI=true` |
 
 The **Privacy & security** tab shows this table live, based on the actual configuration. Details:
 [docs/SECURITY-PRIVACY.md](docs/SECURITY-PRIVACY.md).
@@ -82,7 +96,7 @@ flowchart LR
     X --> T
     Q[QuickBooks, read-only] --> T
     T --> R[Reconciliation + draft report]
-    U[Question] --> G[Guardrails] --> A[Local AI model + tools]
+    U[Question] --> G[Guardrails] --> RT[Task / privacy / model routers] --> A[AI model + typed tools]
     A -->|search_docs| I
     A -->|run_sql, read-only| T
     A -->|propose_action| AP[Approval queue]
@@ -107,14 +121,16 @@ app/
   invoices/            field extraction, checks, review state
   integrations/        QuickBooks Online client (read-only, OAuth 2.0) + offline sandbox
   accounting/          QuickBooks → tables, reconciliation, draft summary
-  agent/               AI providers (Ollama, OpenAI-compatible, Bedrock, CLI), tools, engine
+  llm/                 providers (Claude, OpenAI-compatible family, Azure, Gemini, Bedrock, Ollama, CLI),
+                       model/task/privacy routers, typed schemas, structured outputs
+  agent/               typed tools, conversation memory, engine
   rag/ data/           search index, DuckDB store (read-only SQL), ingestion, auto-reindex
   security/            input guardrails, output scrubber, system-prompt armour
   approvals.py audit.py
   ui/index.html        the web interface
 data/                  synthetic sample data, unseen invoices, QuickBooks fixture, ground truth
 scripts/               sample-data generator, evaluation
-tests/                 104 automated tests
+tests/                 150+ automated tests
 docs/                  install, operations, QuickBooks, security, dependencies, results, roadmap
 ```
 
@@ -122,6 +138,7 @@ docs/                  install, operations, QuickBooks, security, dependencies, 
 
 | Document | Contents |
 |---|---|
+| [LLM-ROUTING.md](docs/LLM-ROUTING.md) | API keys for any provider, model/task/privacy routing, type-safe outputs |
 | [INSTALL-MAC.md](docs/INSTALL-MAC.md) | Installing on a Mac Studio, choosing a model, starting automatically |
 | [DEMO-SCRIPT.md](docs/DEMO-SCRIPT.md) | Step-by-step demo walkthrough |
 | [OPERATIONS.md](docs/OPERATIONS.md) | Day-to-day use, backups, updates, troubleshooting |

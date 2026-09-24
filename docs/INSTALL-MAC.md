@@ -91,6 +91,6 @@ set and check the results in the Invoices tab before widening it.
 ## Verify the install
 
 ```bash
-make test        # 104 automated tests
+make test        # full automated test suite
 make evaluate    # regenerates docs/TEST-RESULTS.md on this machine
 ```

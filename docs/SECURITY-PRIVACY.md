@@ -20,7 +20,7 @@
 | Documents, invoices, spreadsheets | `DATA_DIR` on the Mac → parsed locally → `storage/` | always |
 | Scanned pages / photos | Tesseract OCR on the Mac | always |
 | Questions + retrieved passages | the local model (Ollama) | when a model is running |
-| Questions + passages + query results | the cloud model provider | **only** if `ALLOW_CLOUD_AI=true` and a cloud provider is configured |
+| Questions + passages + query results | the cloud model provider | **only** if `ALLOW_CLOUD_AI=true`, a key is configured, **and** the request's data classes are in `CLOUD_ALLOWED_DATA` (default: documents only), with emails/phones/account numbers masked. Accounting, invoice and bank data and high-risk identifiers go to local models only. |
 | QuickBooks queries | Intuit API (read-only GET) | only in `QBO_MODE=sandbox` |
 | Email | not connected in this prototype | — |
 
@@ -31,6 +31,9 @@ The **Privacy & security** tab shows this live for the current configuration.
 | Area | Control |
 |---|---|
 | Network exposure | Binds to `127.0.0.1` by default; optional `APP_API_KEY` for any other client; rate limiting; request-size limits; security headers (`nosniff`, `DENY` framing, `no-referrer`, `no-store`). |
+| AI routing | Privacy router decides local vs cloud per request from data classes and PII; the tool layer blocks cloud models from reading non-allowed tables/documents; earlier local-only turns are withheld from cloud models; every answer records which model handled it (see [LLM-ROUTING.md](LLM-ROUTING.md)). |
+| Type safety | Model tool calls and structured outputs are validated against Pydantic schemas before use; invalid output is rejected and retried, never executed. |
+| API keys | Provider keys live only in `.env` (git-ignored), are never sent to the browser, and are redacted by the output scrubber if a model ever echoes one. |
 | Prompt injection | Input firewall (instruction override, role-play jailbreaks, secret fishing, unsafe SQL, format hijacking); a system prompt that treats documents and tool output as data; output scrubber that redacts credential-shaped strings. |
 | SQL | DuckDB with external access disabled (no file/network reads); the query is parsed and every table checked against an allowlist; single `SELECT` only; hard row cap. |
 | QuickBooks | GET-only client; `SELECT * FROM <allowlisted entity>` only; single-use OAuth `state` checked; production refused by default; one-click revoke + local data deletion. |
