@@ -54,3 +54,12 @@ def test_backup_roundtrip(tmp_path):
     assert (tmp_path / "rd" / "docs" / "a.md").read_text() == "hello"
     assert not (tmp_path / "r" / "cache").exists()  # caches are not backed up
     assert run("restore", str(archive), e=target).returncode != 0  # refuses to overwrite without --force
+
+
+def test_pyproject_dependencies_match_requirements():
+    tomllib = pytest.importorskip("tomllib")
+
+    req = {line.strip() for line in (ROOT / "requirements.txt").read_text().splitlines()
+           if line.strip() and not line.startswith("#")}
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    assert set(project["dependencies"]) == req

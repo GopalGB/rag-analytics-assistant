@@ -15,9 +15,11 @@ function el(tag, attrs = {}, ...kids) {
   return e;
 }
 function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 3200); }
+const BASE = location.pathname.replace(/[^/]*$/, "");
+const u = (path) => BASE + String(path).replace(/^\//, "");
 function headers(json = true) { const h = { "X-User": encodeURIComponent(who.value.trim()) }; if (json) h["Content-Type"] = "application/json"; return h; }
 async function api(path, opts = {}) {
-  const r = await fetch(path, { ...opts, headers: { ...headers(!(opts.body instanceof FormData)), ...(opts.headers || {}) } });
+  const r = await fetch(u(path), { ...opts, headers: { ...headers(!(opts.body instanceof FormData)), ...(opts.headers || {}) } });
   const body = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(body.detail || body.error || r.statusText);
   return body;
@@ -25,7 +27,7 @@ async function api(path, opts = {}) {
 const money = (v) => v === null || v === undefined || v === "" ? "—" : Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fileName = (f) => (f || "").split("/").pop();
 function fileLink(file, page, label) {
-  const href = "/files/" + file.split("/").map(encodeURIComponent).join("/") + (page ? "#page=" + page : "");
+  const href = u("files/") + file.split("/").map(encodeURIComponent).join("/") + (page ? "#page=" + page : "");
   return el("a", { href, target: "_blank", rel: "noopener", text: label || fileName(file) });
 }
 function confBar(c) {
@@ -69,6 +71,11 @@ async function refreshHealth() {
   try {
     const h = await api("/health");
     $("#app-name").textContent = h.app_name;
+    if (h.public_demo) {
+      document.body.classList.add("public-demo");
+      $("#demo-badge").hidden = false;
+      document.querySelectorAll(".demo-only").forEach((n) => { n.hidden = false; });
+    }
     const llm = $("#chip-llm");
     llm.textContent = h.llm_enabled ? `AI: ${h.llm} (${h.llm_local ? "local" : "cloud"})${h.models > 1 ? ` +${h.models - 1} more` : ""}` : "AI: off · quoting sources only";
     llm.style.cursor = "pointer"; llm.onclick = () => show("models");
@@ -158,7 +165,7 @@ function addMsg(role, text, payload) {
 const TOOL_LABEL = { search_docs: "Searching documents", run_sql: "Querying data", propose_action: "Preparing an action for approval" };
 async function askStream(question, live) {
   // Server-sent events: progress steps, scrubbed text snapshots, then the final payload.
-  const r = await fetch("/chat/stream", { method: "POST", headers: headers(), body: JSON.stringify({ question, session_id: sessionId }) });
+  const r = await fetch(u("chat/stream"), { method: "POST", headers: headers(), body: JSON.stringify({ question, session_id: sessionId }) });
   if (!r.ok || !r.body) throw new Error("stream unavailable");
   const reader = r.body.getReader(), dec = new TextDecoder();
   let buf = "", final = null;
@@ -272,6 +279,30 @@ async function loadInvoices() {
 loaders.invoices = loadInvoices;
 $("#inv-filter").addEventListener("change", loadInvoices);
 const FIELD_LABELS = { supplier: "Supplier", invoice_number: "Invoice number", invoice_date: "Invoice date", due_date: "Due date", po_number: "PO number", currency: "Currency", subtotal: "Subtotal", tax: "Tax", total: "Total" };
+// ---------------- invoice lab (paste text → fields; nothing stored)
+const LAB_SAMPLE = "Invoice INV-INCONSISTENT\nVendor: Fictional Vendor\nQuantity: 3\nUnit price: $10.00\nTotal: $25.00";
+async function runLab() {
+  const text = $("#lab-text").value.trim();
+  const out = $("#lab-out"); out.replaceChildren();
+  if (!text) { toast("Paste some invoice text first."); return; }
+  try {
+    const r = await api("/extract", { method: "POST", body: JSON.stringify({ text, filename: "pasted.txt" }) });
+    if (r.issues.length) out.append(el("div", { class: "warnbox", style: "margin-top:12px" }, el("strong", { text: "Check:" }), el("ul", { class: "issues" }, r.issues.map((x) => el("li", { text: x })))));
+    else out.append(el("p", { class: "small", style: "margin-top:12px", text: "All key fields found and the figures are consistent." }));
+    const rows = Object.entries(FIELD_LABELS).map(([k, label]) => ({ label, ...r.fields[k] }));
+    const t = el("table", { style: "margin-top:8px" });
+    table(t, [
+      { label: "Field", key: "label" },
+      { label: "Value", render: (x) => x.value === null ? el("span", { class: "pill", text: "not found" }) : String(x.value) },
+      { label: "Confidence", render: (x) => x.value === null ? "—" : confBar(x.confidence) },
+      { label: "Read from", render: (x) => [x.evidence ? `“${x.evidence.slice(0, 80)}”` : "", x.note].filter(Boolean).join(" · ") || "—" },
+    ], rows);
+    out.append(el("div", { class: "table-wrap" }, t), el("p", { class: "small muted", text: r.method }));
+  } catch (e) { toast("Could not read it: " + e.message); }
+}
+$("#lab-run").addEventListener("click", runLab);
+$("#lab-sample").addEventListener("click", () => { $("#lab-text").value = LAB_SAMPLE; runLab(); });
+
 function openInvoice(id, scroll = true) {
   const inv = invoices.find((i) => i.id === id); if (!inv) return;
   selectedInvoice = id;
@@ -332,7 +363,7 @@ async function loadQbo() {
     el("div", {}, el("strong", { text: s.company || (s.connected ? "Connected" : "Not connected") }),
       el("div", { class: "small muted", text: `${modeText}${s.last_sync ? " · last synced " + s.last_sync : ""}` })),
     el("div", { class: "row" },
-      s.mode === "sandbox" && !s.connected ? el("a", { class: "btn primary", href: "/qbo/connect", style: "text-decoration:none", text: "Connect sandbox company" }) : null,
+      s.mode === "sandbox" && !s.connected ? el("a", { class: "btn primary", href: u("qbo/connect"), style: "text-decoration:none", text: "Connect sandbox company" }) : null,
       s.connected ? el("button", { class: "btn primary", text: "Sync now", onclick: async () => { try { const r = await api("/qbo/sync", { method: "POST" }); toast(`Synced (read-only): ${Object.entries(r.counts).map(([k, v]) => `${v} ${k.replace("qbo_", "")}`).join(", ")}`); loadQbo(); refreshHealth(); } catch (e) { toast(e.message); } } }) : null,
       s.connected ? el("button", { class: "btn danger", text: s.mode === "mock" ? "Remove local copy" : "Disconnect & revoke", onclick: async () => { if (!confirm("Revoke access and delete the local QuickBooks copy?")) return; await api("/qbo/disconnect", { method: "POST" }); toast("Disconnected; local copy deleted."); loadQbo(); } }) : null)));
   if (s.mode === "sandbox" && s.configured === false) card.append(el("div", { class: "warnbox", style: "margin-top:10px", text: "Set QBO_CLIENT_ID and QBO_CLIENT_SECRET from an Intuit developer sandbox app, then restart. See docs/QUICKBOOKS.md." }));
@@ -516,8 +547,8 @@ async function openReport(id) {
     aiBtn.textContent = "Add AI summary"; aiBtn.disabled = false;
   } });
   box.replaceChildren(el("div", { class: "row", style: "justify-content:flex-end;gap:8px" }, aiBtn,
-    el("a", { class: "btn", href: `/reports/${id}.html`, target: "_blank", rel: "noopener", style: "text-decoration:none", text: "Print / PDF" }),
-    el("a", { class: "btn", href: `/reports/${id}.md`, style: "text-decoration:none", text: "Download .md" })), aiBox, md);
+    el("a", { class: "btn", href: u(`reports/${id}.html`), target: "_blank", rel: "noopener", style: "text-decoration:none", text: "Print / PDF" }),
+    el("a", { class: "btn", href: u(`reports/${id}.md`), style: "text-decoration:none", text: "Download .md" })), aiBox, md);
   renderMarkdown(r.markdown, md);
 }
 async function loadReports() {

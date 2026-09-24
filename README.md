@@ -24,13 +24,13 @@ OpenAI-compatible server. On the Mac Studio the recommended model is Qwen 2.5 14
 
 | Requirement (first prototype) | How it's met | Where to see it |
 |---|---|---|
-| Load a set of sample company documents and invoices | 5 documents (PDF, Word, Markdown), 8 supplier invoices incl. a **scanned** PDF, a bank statement (XLSX) and a project budget (CSV). Drop more into the folder or upload in the UI; they're indexed automatically. | **Documents** tab |
+| Load a set of sample company documents and invoices | 5 synthetic company documents (PDF, Word, Markdown) plus 4 **real public documents** (a 28-page IRS PDF, a GOV.UK Word file, an OWASP page, a country-codes CSV; see [PUBLIC-DOCUMENTS.md](docs/PUBLIC-DOCUMENTS.md)), 8 supplier invoices incl. a **scanned** PDF, a bank statement (XLSX) and a project budget (CSV). Drop more into the folder or upload in the UI; they're indexed automatically. | **Documents** tab |
 | Answer questions and show the supporting sources | Hybrid search (keyword + vector) → local AI model writes a cited answer (`[file, p.N]`); each source links to the original at the right page. With no AI model it quotes the best passages instead of inventing text. | **Ask** tab |
 | Extract supplier, date, invoice number and amount | Label-aware extraction from layout text (OCR for scans), plus due date, PO, subtotal, tax, currency, each with a confidence score and the line it was read from. The AI model can assist, but its values are only accepted if they appear on the document. | **Invoices** tab, `GET /invoices/export.csv` |
 | Retrieve information from a QuickBooks test company, read-only | Pulls vendors, bills, customer invoices and accounts into local tables; reconciles them against the invoices on file (matched / amount mismatch / not recorded / duplicate / bill with no document). Read-only is enforced in code. | **QuickBooks** tab |
 | Present results through a simple interface | Single-page web app at `http://127.0.0.1:8000`, works on desktop and phone. | — |
 | Flag missing or uncertain information instead of inventing answers | Missing fields, ambiguous dates (`05/12/2026`), totals that don't add up, duplicates, OCR input and AI/rule disagreements are all flagged; every extraction starts as *needs review*. Questions the documents can't answer get "I couldn't find this". | Invoices, Ask |
-| Useful results on documents it has not processed before | `data/unseen_invoices/` holds invoices in new layouts (incl. a phone-photo PNG). Upload them live: they're read, extracted and reconciled on the spot. | Documents → upload |
+| Useful results on documents it has not processed before | `data/unseen_invoices/` holds invoices in new layouts (incl. a phone-photo PNG, plain-text and AED invoices). Upload them live, or paste any invoice's text into the **Invoice lab**: fields are read with the line they came from, and unreadable totals or quantity × price mismatches are flagged. | Documents → upload, Invoices → Invoice lab |
 | External actions need explicit approval | The assistant can only *propose* an email or a QuickBooks entry. A named person approves or rejects it; in this prototype approved actions are logged but not executed. | **Approvals** tab |
 | Use any AI provider, safely | Add any API key (Claude, OpenAI, Gemini, OpenRouter, Azure, Groq, Mistral, DeepSeek, Together, xAI, Bedrock) and/or local Ollama. A **task router** picks the pipeline per request, a **model router** handles fast/strong tiers, fallback, circuit breaking, tokens and cost, and a **privacy router** keeps accounting, invoice, bank and high-risk personal data on local models and masks PII sent to the cloud. Model outputs and tool calls are **type-checked** (Pydantic). | **AI models** tab, answer trace, [docs/LLM-ROUTING.md](docs/LLM-ROUTING.md) |
 | Graphs, reports and accounting checks | **Overview** dashboard: KPIs, payables/receivables aging, spend by supplier, cash flow and budget vs. actual, drawn as accessible SVG charts (table view included). Bank lines are matched to QuickBooks bills and receipts, invoice line items are checked against subtotals, and draft reports (accounts summary, aging, outstanding items, project status) are built from the data with each figure's source, flagging where a document and a spreadsheet disagree. | **Overview**, **Reports** tabs |
@@ -43,6 +43,14 @@ Measured results on the synthetic set (from `make evaluate`, see [docs/TEST-RESU
 5/5 planted problems flagged, 10/10 search questions return the right document first, 3/3 unanswerable
 questions answered "not found", 8/8 invoices reconciled correctly against QuickBooks, 8/8 bank lines
 classified correctly, 11/11 invoices with correct line items, 7/8 reworded questions found by semantic search.
+
+## Share it without installing: hosted public demo
+
+`PUBLIC_DEMO=true` turns the same app into a read-only, stateless demo (no uploads, reviews, approvals or
+QuickBooks changes; no conversation memory) for hosting on Vercel behind an optional Cloudflare Worker
+under your own domain, with a hosted model such as Groq's `openai/gpt-oss-120b`. Synthetic and public
+data only. Setup, environment variables and the proxy: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+Check any running install end to end with `python scripts/evaluate_live.py --base-url <url>`.
 
 ## Using your own API key
 
@@ -142,8 +150,9 @@ app/
   observability.py     request IDs, JSON logs, metrics      approvals.py audit.py
   ui/                  the web interface (index.html, app.js, dependency-free SVG charts.js)
 data/                  synthetic sample data, unseen invoices, QuickBooks fixture, ground truth
-scripts/               sample-data generator, evaluation, backup/restore
-tests/                 180+ automated tests
+scripts/               sample-data generator, offline evaluation, live HTTP evaluation, backup/restore
+tests/                 220+ automated tests (Python) + Cloudflare Worker tests (Node)
+deploy/                Cloudflare Worker proxy for the hosted demo
 Dockerfile, docker-compose.yml
 docs/                  install, operations, QuickBooks, security, dependencies, results, roadmap
 ```
@@ -160,6 +169,8 @@ docs/                  install, operations, QuickBooks, security, dependencies, 
 | [QUICKBOOKS.md](docs/QUICKBOOKS.md) | Connecting an Intuit sandbox company (read-only) |
 | [SECURITY-PRIVACY.md](docs/SECURITY-PRIVACY.md) | Data flows, controls, credentials, revocation |
 | [DEPENDENCIES.md](docs/DEPENDENCIES.md) | Models, software, licences and recurring costs |
+| [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Mac, Docker, or the hosted public demo (Vercel + Cloudflare Worker) |
+| [PUBLIC-DOCUMENTS.md](docs/PUBLIC-DOCUMENTS.md) | The real public documents in the sample data, with sources and licences |
 | [TEST-RESULTS.md](docs/TEST-RESULTS.md) | Measured results on the sample and unseen documents |
 | [ROADMAP.md](docs/ROADMAP.md) | Known limitations and proposed next stages |
 

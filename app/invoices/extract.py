@@ -112,12 +112,14 @@ def parse_date(text: str, order: str = "MDY") -> ParsedDate | None:
 
 
 # --------------------------------------------------------------------------- amounts
+CURRENCY_CODES = ("USD", "EUR", "GBP", "AED", "AUD", "CAD", "NZD", "SGD", "INR", "CHF", "JPY", "ZAR", "SAR", "HKD")
+_CODES = "|".join(CURRENCY_CODES)
 _MONEY = re.compile(
-    r"(?:(?:USD|US\$|AUD|CAD|EUR|GBP|\$|€|£)\s*)?(-?\d{1,3}(?:,\d{3})+(?:\.\d{2})?|-?\d+\.\d{2})(?!\s*%)"
+    rf"(?:(?:{_CODES}|US\$|\$|€|£)\s*)?(-?\d{{1,3}}(?:,\d{{3}})+(?:\.\d{{2}})?|-?\d+\.\d{{2}})(?!\s*%)"
 )
 _TOTAL_LABELS = [
     r"total\s+amount\s+payable", r"amount\s+payable", r"total\s+due", r"amount\s+due", r"balance\s+due",
-    r"grand\s+total", r"invoice\s+total", r"total\s+(?:usd|aud|cad|eur|gbp)", r"(?<!sub)(?<!sub-)(?<!sub )total",
+    r"grand\s+total", r"invoice\s+total", rf"total\s+(?:{_CODES.lower()})", r"(?<!sub)(?<!sub-)(?<!sub )total",
 ]
 _SUBTOTAL_LABELS = [
     r"sub-?\s?total", r"net\s+amount", r"net\s+total", r"goods\s*&\s*services", r"total\s+before\s+tax",
@@ -181,6 +183,7 @@ _NUM_PATTERNS = [
     ),
     (r"\binvoice\s*[:#]\s*([A-Za-z0-9][A-Za-z0-9\-/_.]*[A-Za-z0-9])", 0.8),
     (r"\b(?:our\s+)?ref(?:erence)?\.?\s*[:#]\s*([A-Za-z0-9][A-Za-z0-9\-/_.]*[A-Za-z0-9])", 0.5),
+    (r"^\s*invoice\s+([A-Z0-9]+(?:[-/][A-Z0-9]+)+)\s*$", 0.7),
 ]
 _PO_PATTERN = r"\b(?:PO|P\.O\.|purchase\s+order)\s*(?:number|no\.?|#)?\s*[:#]?\s*([A-Za-z0-9][A-Za-z0-9\-/]*\d[A-Za-z0-9\-/]*)"
 _INV_DATE_LABEL = r"\b(invoice\s+date|date\s+of\s+issue|issue\s+date|issued(?:\s+on)?|tax\s+point|dated|date)\b\s*[:\-]?\s*"
@@ -316,7 +319,8 @@ def extract_rules(text: str, known_suppliers: list[str] | None = None, date_orde
         for line in lines:
             for m in rx.finditer(line):
                 val = m.group(1).rstrip(".")
-                if re.search(r"\d", val) and len(val) <= 30 and not re.fullmatch(DATE_RE, val, re.I):
+                ident = re.search(r"\d", val) or re.fullmatch(r"[A-Z0-9]+(?:[-/][A-Z0-9]+)+", val)
+                if ident and len(val) <= 30 and not re.fullmatch(DATE_RE, val, re.I):
                     hit = FieldValue(val, conf, line.strip())
                     break
             if hit:
@@ -355,20 +359,73 @@ def extract_rules(text: str, known_suppliers: list[str] | None = None, date_orde
         if hit:
             f[name] = FieldValue(hit[0], conf, hit[1])
     if f["total"].value is None:
-        amounts = [_to_amount(a) for a in _MONEY.findall(text)]
-        if amounts:
-            f["total"] = FieldValue(max(amounts), 0.35, "", "no 'total' label found; took the largest amount")
+        unreadable = _unreadable_total(lines)
+        if unreadable:
+            ex.issues.append(f"The total on the invoice can't be read ('{unreadable}'). Enter it from the original.")
+        else:
+            amounts = [_to_amount(a) for a in _MONEY.findall(text)]
+            if amounts:
+                f["total"] = FieldValue(max(amounts), 0.35, "", "no 'total' label found; took the largest amount")
 
-    if re.search(r"\bUSD\b|US\$", text):
-        f["currency"] = FieldValue("USD", 0.9, "USD")
-    elif "€" in text or re.search(r"\bEUR\b", text):
-        f["currency"] = FieldValue("EUR", 0.9, "EUR")
-    elif "£" in text or re.search(r"\bGBP\b", text):
-        f["currency"] = FieldValue("GBP", 0.9, "GBP")
-    elif "$" in text:
-        f["currency"] = FieldValue("USD", 0.6, "$", "assumed USD from the $ sign")
+    f["currency"] = _currency(text)
     ex.line_items = extract_line_items(lines)
+    _check_quantity_price(lines, f, ex)
     return ex
+
+
+def _unreadable_total(lines: list[str]) -> str | None:
+    """A 'Total: MISSING' / 'Total: unclear' line: the label is there but no amount follows it."""
+    for line in lines:
+        m = re.match(r"^\s*(?:grand\s+|invoice\s+)?total(?:\s+(?:due|amount))?\s*[:\-]\s*(\S.*)$", line, re.I)
+        if m and not _MONEY.search(m.group(1)):
+            return line.strip()
+    return None
+
+
+def _currency(text: str) -> FieldValue:
+    labelled = re.search(r"^\s*currency\s*[:\-]\s*([A-Za-z]{3})\b", text, re.I | re.M)
+    if labelled and labelled.group(1).upper() in CURRENCY_CODES:
+        return FieldValue(labelled.group(1).upper(), 0.95, labelled.group(0).strip())
+    found = [c for c in CURRENCY_CODES if re.search(rf"\b{c}\b", text)]
+    if "US$" in text and "USD" not in found:
+        found.insert(0, "USD")
+    if "€" in text and "EUR" not in found:
+        found.append("EUR")
+    if "£" in text and "GBP" not in found:
+        found.append("GBP")
+    if len(found) == 1:
+        return FieldValue(found[0], 0.9, found[0])
+    if len(found) > 1:
+        return FieldValue(found[0], 0.4, found[0], f"several currencies on the invoice: {', '.join(found)}")
+    if "$" in text:
+        return FieldValue("USD", 0.6, "$", "assumed USD from the $ sign")
+    return FieldValue()
+
+
+def _check_quantity_price(lines: list[str], f: dict[str, FieldValue], ex: InvoiceExtraction) -> None:
+    """Invoices without a line-item table sometimes state one 'Quantity:' and 'Unit price:'; check them."""
+    if ex.line_items:
+        return
+    qty = next((m.group(1).strip() for ln in lines if (m := re.match(r"^\s*(?:quantity|qty)\s*[:\-]?\s*(\S.*)$", ln, re.I))), None)
+    price_line = next((m.group(1).strip() for ln in lines if (m := re.match(r"^\s*unit\s+price\s*[:\-]?\s*(\S.*)$", ln, re.I))), None)
+    if qty is None or price_line is None:
+        return
+    price = _MONEY.search(price_line)
+    try:
+        q = float(qty.replace(",", ""))
+    except ValueError:
+        ex.issues.append(f"Quantity '{qty}' is not a number, so the total can't be checked against the unit price.")
+        return
+    if not price:
+        ex.issues.append(f"Unit price '{price_line}' is not an amount, so the total can't be checked.")
+        return
+    target = f["subtotal"].value if f["subtotal"].value is not None else f["total"].value
+    expected = round(q * _to_amount(price.group(1)), 2)
+    if target is not None and abs(expected - target) > 0.011:
+        label = "subtotal" if f["subtotal"].value is not None else "total"
+        ex.issues.append(f"Quantity {q:g} x unit price {_to_amount(price.group(1)):,.2f} = {expected:,.2f}, "
+                         f"but the {label} is {target:,.2f}.")
+        f["total"].confidence = min(f["total"].confidence, 0.5)
 
 
 # --------------------------------------------------------------------------- AI assist

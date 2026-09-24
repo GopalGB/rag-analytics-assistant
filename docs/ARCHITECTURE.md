@@ -273,11 +273,11 @@ are reloaded atomically via temp table and swap.
 
 ```mermaid
 flowchart LR
-    IN[Request] --> L1[Network: 127.0.0.1 bind,<br/>API key, rate + size limits]
+    IN[Request] --> L1[Network: 127.0.0.1 bind, Host allowlist,<br/>same-origin check, API key,<br/>rate + streamed size limits]
     L1 --> L2[Guardrails:<br/>injection, secrets, unsafe SQL]
     L2 --> L3[Privacy router:<br/>local-only, PII masking]
     L3 --> L4[Typed tools: schema,<br/>allowlist, privacy guard]
-    L4 --> L5[SQL sandbox: no I/O,<br/>table allowlist, row cap]
+    L4 --> L5[SQL sandbox: no I/O, table allowlist,<br/>row cap, no row generators,<br/>2 s timeout, memory limit]
     L5 --> L6[Output: scrubber,<br/>registered-key redaction,<br/>streaming holdback]
     L6 --> L7[Citation check,<br/>sources only if used]
     L7 --> OUT[Answer]
@@ -289,10 +289,13 @@ flowchart LR
 | Prompt injection in a question or a document | Input firewall; system-prompt armour treats documents and tool results as data; tools are typed and allowlisted; the model can't execute actions, only propose them |
 | Data leaving the machine | Cloud off by default; per-class policy; PII masking; tool guard; memory withholding; privacy page shows the live policy |
 | Model hallucination | Retrieval-first answers, citation verification, grounded invoice values, deterministic reports, "not found" behaviour |
-| Destructive or exfiltrating SQL | DuckDB with no external access, parser-level table allowlist, SELECT-only, row cap |
+| Destructive or exfiltrating SQL | DuckDB with no external access, parser-level table allowlist (a CTE named like a real table counts as that table), SELECT-only, row cap |
+| Runaway SQL (denial of service) | Row generators (`range`, `generate_series`, `unnest`, any table function, `WITH RECURSIVE`) rejected; each query interrupted after `SQL_TIMEOUT_SECONDS`; connection memory limit |
+| Other websites driving the local app (CSRF, DNS rebinding) | Cross-site POSTs rejected (`Sec-Fetch-Site`/`Origin` must match; extra origins only via `ALLOWED_ORIGINS`); unknown `Host` headers rejected (`ALLOWED_HOSTS`) |
+| Leaks through follow-up questions | Every table and passage a turn reads is classified; a turn that read local-only data is withheld from cloud models in later history; the intent classifier masks PII before a cloud model sees the question |
 | Credential leakage | Keys only in `.env`; configured keys redacted from every answer; token files 0600 or Keychain; secret-pattern scrubber on streamed text |
 | Unauthorised QuickBooks changes | GET-only client, query allowlist, production refused, revoke button |
-| Tampering with history | Hash-chained activity log with verification on the UI, backup and restore |
+| Tampering with history | Hash-chained activity log: edits and deleted or reordered lines are detected (removing only the newest entries is not; keep off-machine backups). Backups are checksummed and restores reject unlisted files |
 | Browser attacks | Strict CSP (`script-src 'self'`, no inline JS), `frame-ancestors 'none'`, nosniff, no-referrer, all untrusted text inserted with `textContent` |
 | Path traversal / malicious uploads | Type and size checks, sanitised names, file serving confined to `DATA_DIR`, DOCX read as XML (no macros) |
 
@@ -320,7 +323,15 @@ flowchart LR
 | **Mac Studio, native** (recommended) | `make setup && make run`, launchd for autostart ([INSTALL-MAC.md](INSTALL-MAC.md)) | Ollama on the Metal GPU; lowest latency |
 | **Docker on the Mac** | `docker compose up -d`, with Ollama running natively via `host.docker.internal` | Read-only container, non-root user, state on a named volume, healthcheck on `/ready` |
 | **Linux server** | `docker compose --profile ollama up -d` | Ollama in a container (CPU or NVIDIA) |
-| **Office network** | Set `APP_API_KEY`, put HTTPS in front (e.g. Caddy), `TRUST_LOOPBACK=false` | Per-user sign-in is a pilot-stage item |
+| **Office network** | Set `APP_API_KEY`, add the Mac's name to `ALLOWED_HOSTS`, put HTTPS in front (e.g. Caddy), `TRUST_LOOPBACK=false` | Per-user sign-in is a pilot-stage item |
+| **Hosted public demo** | Vercel with `PUBLIC_DEMO=true`, optionally behind the Cloudflare Worker in `deploy/` ([DEPLOYMENT.md](DEPLOYMENT.md)) | Read-only and stateless; synthetic and public data only; hosted model |
+
+```mermaid
+flowchart LR
+    B[Browser] -->|https://your-domain/rag-assistant/*| W[Cloudflare Worker<br/>strips cookies, auth,<br/>spoofed forwarding headers;<br/>adds the API key]
+    W -->|x-api-key| V[Vercel: FastAPI app<br/>PUBLIC_DEMO=true,<br/>DB in memory, state in /tmp]
+    V -->|questions, passages| G[Hosted model<br/>e.g. Groq gpt-oss-120b]
+```
 
 Run a single worker process: routing metrics, conversation memory and caches live in-process. The
 workload is I/O- and model-bound, so one process serves a small office comfortably.
@@ -336,6 +347,7 @@ verifies every checksum and refuses to overwrite existing state without `--force
 | GET | `/` , `/ui/{app.js,charts.js}` | Web UI |
 | GET | `/health`, `/ready`, `/metrics` | Status and warnings, readiness, Prometheus metrics |
 | POST | `/chat`, `/chat/stream` | Answer a question (JSON, or server-sent events) |
+| POST | `/extract` | Invoice lab: read invoice fields from pasted text (rules only, nothing stored) |
 | GET/POST | `/documents`, `/upload`, `/refresh`, `/files/{path}` | Document list, upload, reindex, open original |
 | GET/POST | `/invoices`, `/invoices/{id}/review`, `/invoices/export.csv` | Extracted invoices, review/correct, export |
 | GET/POST | `/qbo/status`, `/qbo/sync`, `/qbo/connect`, `/qbo/callback`, `/qbo/disconnect`, `/qbo/data` | QuickBooks (read-only), OAuth, revoke |

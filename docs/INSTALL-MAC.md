@@ -55,8 +55,10 @@ Open <http://127.0.0.1:8000>. The header shows the AI model (should say *local*)
 the QuickBooks connection. The **Privacy & security** tab confirms nothing leaves the machine.
 
 The server listens on `127.0.0.1` only. To allow other computers on the office network, set
-`APP_API_KEY` in `.env` and start it with `--host 0.0.0.0`. Put it behind HTTPS (e.g. Caddy) and
-set `TRUST_LOOPBACK=false`.
+`APP_API_KEY` in `.env`, add the name people will type to `ALLOWED_HOSTS` (for example
+`ALLOWED_HOSTS=127.0.0.1,localhost,mac-studio.local,192.168.1.20`; other host names are refused as a
+DNS-rebinding defence) and start it with `--host 0.0.0.0`. Put it behind HTTPS (e.g. Caddy) and set
+`TRUST_LOOPBACK=false`.
 
 ## 5. Start automatically at login (optional)
 

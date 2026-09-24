@@ -12,13 +12,16 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+_ROOT = Path(__file__).resolve().parents[1]
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # --- App ---
     app_name: str = "Private AI Assistant"
-    data_dir: str = "data/sample"  # documents, invoices and spreadsheets to index (scanned recursively)
+    # documents, invoices and spreadsheets to index (scanned recursively); default works from any directory
+    data_dir: str = str(_ROOT / "data" / "sample")
     storage_dir: str = "storage"  # local state: database, caches, reviews, approvals, audit log
     db_path: str = "storage/assistant.duckdb"
     upload_subdir: str = "uploads"  # uploads are saved under <data_dir>/<upload_subdir>/
@@ -38,9 +41,16 @@ class Settings(BaseSettings):
     # Loopback exemption for the API key. Safe for local use; set False behind a reverse proxy
     # (where every request appears to come from 127.0.0.1) so the key is always required.
     trust_loopback: bool = True
+    # Hosted public demo (synthetic data only): read-only and stateless. Uploads, re-scans, reviews,
+    # approvals and QuickBooks connect/sync/disconnect are refused, and conversations aren't remembered.
+    public_demo: bool = False
+    sql_timeout_seconds: float = 2.0  # model/user SQL is interrupted after this long
+    db_memory_limit: str = "512MB"
     # Host names the server answers to (DNS-rebinding defence). Add the Mac's LAN name/IP when serving
     # other machines, or the public domain for a hosted demo. "*" disables the check.
     allowed_hosts: str = "127.0.0.1,localhost,::1"
+    # Extra browser origins allowed to POST (a proxy in front of a hosted demo), comma-separated.
+    allowed_origins: str = ""
 
     # --- AI models ---
     # With no model the assistant still works: document questions return the most relevant source
@@ -122,7 +132,7 @@ class Settings(BaseSettings):
 
     # --- QuickBooks Online (read-only) ---
     qbo_mode: Literal["mock", "sandbox", "production", "off"] = "mock"  # mock (offline sandbox fixture) | sandbox (live Intuit sandbox) | off
-    qbo_fixture: str = "data/qbo_sandbox/sandbox_company.json"
+    qbo_fixture: str = str(_ROOT / "data" / "qbo_sandbox" / "sandbox_company.json")
     qbo_client_id: str | None = None
     qbo_client_secret: str | None = None
     qbo_redirect_uri: str = "http://localhost:8000/qbo/callback"
@@ -141,6 +151,9 @@ class Settings(BaseSettings):
     prefetch_passages: int = 4  # top passages handed to the model up front (helps small local models)
     max_sql_rows: int = 200
     history_turns: int = 8
+
+    def allowed_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
 
     def allowed_host_list(self) -> list[str]:
         return [h.strip() for h in self.allowed_hosts.split(",") if h.strip()]

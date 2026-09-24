@@ -40,6 +40,7 @@ os.environ.update(
         "QBO_FIXTURE": str(ROOT / "data" / "qbo_sandbox" / "sandbox_company.json"),
         "AUTO_REINDEX": "false",  # keep the test hermetic (no background poller)
         "ALLOWED_HOSTS": "127.0.0.1,localhost,testserver",  # TestClient sends Host: testserver
+        "RATE_BURST": "1000",  # the whole module shares one client IP
     }
 )
 
@@ -273,3 +274,39 @@ def test_chat_stream_endpoint(client):
     kinds = [e["type"] for e in events]
     assert kinds[0] == "status" and "model" in kinds and kinds[-1] == "done"
     assert "30 June 2029" in events[-1]["payload"]["text"]
+
+
+def test_live_evaluator_against_the_app(client):
+    """scripts/evaluate_live.py end to end through the real app (stub model: only model-independent cases)."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("evaluate_live", ROOT / "scripts" / "evaluate_live.py")
+    ev = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ev)
+
+    def http(method, path, body):
+        r = client.request(method, "/" + path, json=body)
+        try:
+            parsed = r.json()
+        except ValueError:
+            parsed = None
+        return r.status_code, parsed, r.content
+
+    cases = [c for c in ev.CASES if c[0] in ("document_citation", "injection_refused")]
+    report = ev.evaluate(http, runs=3, cases=cases)
+    assert report["failures"] == [], report["failures"]
+    assert report["corpus"]["invoices"] >= 8 and report["corpus"]["originals_downloaded"] >= 16
+    assert report["checks"] == {"invoice_lab_flags_problems": True, "dashboard": True,
+                                "project_report_flags_discrepancy": True}
+    assert report["latency"]["warm_samples"] >= 1 and ev.percentile([10, 20, 30, 40], 0.95) == 38.5
+
+
+def test_extract_endpoint_reads_pasted_invoice(client):
+    text = "Invoice No: A-9\nSupplier: Acme Tools LLC\nDate: 2026-01-05\nCurrency: AED\nSubtotal: 40.00\nTax: 2.00\nTotal: 42.00"
+    body = client.post("/extract", json={"text": text}).json()
+    f = body["fields"]
+    assert f["invoice_number"]["value"] == "A-9" and f["total"]["value"] == 42.0 and f["currency"]["value"] == "AED"
+    assert f["total"]["evidence"] == "Total: 42.00" and body["issues"] == []
+    bad = client.post("/extract", json={"text": "Invoice INV-X1\nQuantity: 3\nUnit price: $10.00\nTotal: $25.00"}).json()
+    assert any("3 x unit price 10.00 = 30.00" in i for i in bad["issues"])
+    assert client.post("/extract", json={"text": ""}).status_code == 422

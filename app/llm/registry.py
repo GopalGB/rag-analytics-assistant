@@ -3,7 +3,7 @@
 A model is named by a spec `provider:model`, e.g.
 
     anthropic:claude-sonnet-5        openai:gpt-4o-mini         gemini:gemini-2.5-flash
-    openrouter:meta-llama/llama-3.3-70b-instruct                groq:llama-3.3-70b-versatile
+    openrouter:meta-llama/llama-3.3-70b-instruct                groq:openai/gpt-oss-120b
     mistral:mistral-large-latest     deepseek:deepseek-chat     together:<model>   xai:<model>
     azure:<deployment-name>          bedrock:<model-id>         ollama:qwen2.5:14b  cli:default
 
@@ -51,7 +51,7 @@ PROVIDERS: dict[str, ProviderInfo] = {
     "openrouter": ProviderInfo("openrouter_api_key", "openai/gpt-4o-mini", "openai/gpt-4o",
                                "https://openrouter.ai/api/v1", label="OpenRouter"),
     "azure": ProviderInfo("azure_openai_api_key", None, None, label="Azure OpenAI (model = deployment name)"),
-    "groq": ProviderInfo("groq_api_key", "llama-3.1-8b-instant", "llama-3.3-70b-versatile",
+    "groq": ProviderInfo("groq_api_key", "openai/gpt-oss-20b", "openai/gpt-oss-120b",
                          "https://api.groq.com/openai/v1", label="Groq"),
     "mistral": ProviderInfo("mistral_api_key", "mistral-small-latest", "mistral-large-latest",
                             "https://api.mistral.ai/v1", label="Mistral"),

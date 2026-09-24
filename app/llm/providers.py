@@ -29,7 +29,10 @@ from __future__ import annotations
 import ipaddress
 import json
 import re
+import shlex
+import shutil
 import subprocess
+from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlparse
 
@@ -511,8 +514,24 @@ def _tool_protocol_instructions(toolbox: Any) -> str:
     return "\n".join(lines)
 
 
+def command_argv(command: str) -> list[str]:
+    """Split LLM_CLI_COMMAND into argv without a shell (no metacharacter interpretation). An unquoted
+    executable path containing spaces is recovered by taking the shortest leading run of tokens that
+    names an existing file."""
+    tokens = shlex.split(command)
+    if not tokens:
+        raise LLMError("cli: empty command")
+    if Path(tokens[0]).is_file() or shutil.which(tokens[0]):
+        return tokens
+    for n in range(2, len(tokens) + 1):
+        candidate = " ".join(tokens[:n])
+        if Path(candidate).is_file():
+            return [candidate, *tokens[n:]]
+    return tokens
+
+
 class CommandLLM:
-    """Runs a configured command per turn: full prompt on stdin, completion on stdout."""
+    """Runs a configured command per turn: full prompt on stdin, completion on stdout (no shell)."""
 
     supports_tools = False
     provider = "cli"
@@ -521,12 +540,13 @@ class CommandLLM:
         self.command = command
         self.timeout = timeout
         self.is_local = is_local  # set by the operator: a CLI may call a cloud service
-        self.model = command.split()[0] if command.split() else "cli"
+        self.argv = command_argv(command)
+        self.model = self.argv[0]
         self.name = f"cli:{self.model.rsplit('/', 1)[-1]}"
 
     def _run(self, prompt: str) -> str:
         try:
-            proc = subprocess.run(self.command, shell=True, input=prompt, capture_output=True, text=True, timeout=self.timeout)
+            proc = subprocess.run(self.argv, input=prompt, capture_output=True, text=True, timeout=self.timeout)
         except subprocess.TimeoutExpired as exc:
             raise LLMError("cli: timed out") from exc
         if proc.returncode != 0:

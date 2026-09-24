@@ -43,6 +43,18 @@ make restore FILE=backups/assistant-backup-....tar.gz   # stop the app first; re
 
 Caches (`storage/cache/`) are skipped; they are rebuilt on start.
 
+## Checking a running install end to end
+
+```bash
+python scripts/evaluate_live.py --base-url http://127.0.0.1:8000 --runs 20 --output evaluation.json
+```
+
+It checks, over HTTP, that the documents load and every original downloads, invoices are extracted and
+flagged, the Invoice lab, dashboard and reports work, and that chat answers cite the right source, say
+"not found" when they should, refuse a prompt injection, and (with a model) answer table and accounting
+questions. It reports cold and warm p50/p95 latency; `--max-p95-ms` turns a latency target into a
+pass/fail. `make evaluate` is the offline counterpart (extraction, search and reconciliation accuracy).
+
 ## Monitoring
 
 | Endpoint | Use |

@@ -31,6 +31,7 @@ from app.agent.streaming import stream_answer
 from app.config import Settings
 from app.data import watcher
 from app.integrations.quickbooks import QuickBooksOnline
+from app.invoices.extract import extract_invoice
 from app.middleware import install_security_middleware
 from app.observability import METRICS, RequestContextMiddleware, event, log, request_id_var, setup_logging
 from app.workspace import LLMNotConfiguredError, Workspace  # noqa: F401  (re-exported for callers)
@@ -146,6 +147,7 @@ def health(request: Request) -> dict:
     return {
         "status": "ok",
         "version": __version__,
+        "public_demo": ws.settings.public_demo,
         "config_warnings": ws.config_warnings,
         "app_name": ws.settings.app_name,
         **ws.engine.status(),
@@ -178,6 +180,24 @@ def examples() -> dict:
 class ChatIn(BaseModel):
     question: str = Field(default="", max_length=8000)
     session_id: str = Field(default="default", max_length=128)
+
+
+class ExtractIn(BaseModel):
+    filename: str = Field(default="pasted.txt", max_length=255)
+    text: str = Field(min_length=1, max_length=100_000)
+
+
+@app.post("/extract")
+def extract(body: ExtractIn, request: Request) -> dict:
+    """Invoice lab: read invoice fields from pasted text with the local rules (no AI model, nothing
+    stored). Every field comes with the line it was read from; anything missing or doubtful is flagged."""
+    ws = _ws(request)
+    ex = extract_invoice(body.text, known_suppliers=ws._known_vendors(), date_order=ws.settings.date_order)
+    fields = {name: {"value": fv.value, "confidence": round(fv.confidence, 2), "evidence": fv.evidence, "note": fv.note}
+              for name, fv in ex.fields.items()}
+    ws.audit.record("invoice.extract_preview", actor=_actor(request), chars=len(body.text))
+    return {"filename": body.filename, "fields": fields, "confidence": round(ex.confidence, 2),
+            "issues": ex.issues, "line_items": ex.line_items, "method": "rules (no AI, nothing stored)"}
 
 
 @app.post("/chat")

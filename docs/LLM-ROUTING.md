@@ -38,7 +38,7 @@ OPENAI_API_KEY=...
 | Google Gemini | `GEMINI_API_KEY` | `gemini:` | `gemini-2.5-flash` / `gemini-2.5-pro` |
 | OpenRouter (hundreds of models, one key) | `OPENROUTER_API_KEY` | `openrouter:` | `openai/gpt-4o-mini` / `openai/gpt-4o` |
 | Azure OpenAI | `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_ENDPOINT` | `azure:` | set the deployment name explicitly |
-| Groq | `GROQ_API_KEY` | `groq:` | `llama-3.1-8b-instant` / `llama-3.3-70b-versatile` |
+| Groq | `GROQ_API_KEY` | `groq:` | `openai/gpt-oss-20b` / `openai/gpt-oss-120b` |
 | Mistral | `MISTRAL_API_KEY` | `mistral:` | `mistral-small-latest` / `mistral-large-latest` |
 | DeepSeek | `DEEPSEEK_API_KEY` | `deepseek:` | `deepseek-chat` |
 | Together AI | `TOGETHER_API_KEY` | `together:` | set explicitly |

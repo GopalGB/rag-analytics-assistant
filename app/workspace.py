@@ -74,7 +74,7 @@ class Workspace:
             raise LLMNotConfiguredError(f"REQUIRE_LLM is set but no AI model is available: {self.llm_note}")
 
         embeddings, self.embedding_note = build_embeddings(settings, storage / "cache" / "embeddings")
-        self.store = DataStore(settings.db_path)
+        self.store = DataStore(settings.db_path, settings.sql_timeout_seconds, settings.db_memory_limit)
         self.engine = AgentEngine(
             store=self.store,
             retriever=self._build_retriever(embeddings),
@@ -83,10 +83,10 @@ class Workspace:
             router=self.router,
             intents=IntentRouter(model_fallback=settings.intent_model_fallback),
             privacy=self.privacy,
-            memory=ConversationMemory(max_turns=settings.history_turns),
+            memory=ConversationMemory(max_turns=0 if settings.public_demo else settings.history_turns),
             max_tool_iterations=settings.max_tool_iterations,
             max_sql_rows=settings.max_sql_rows,
-            approvals=self.approvals,
+            approvals=None if settings.public_demo else self.approvals,  # no proposing actions in the demo
             on_event=self.audit.record,
             prefetch_passages=settings.prefetch_passages,
         )

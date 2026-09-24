@@ -51,6 +51,7 @@ Exact versions: `requirements.lock.txt`. The application code is MIT-licensed (`
 | Intuit API usage (production) | check current terms | Intuit's App Partner Program meters some API usage for production apps; a read-only daily sync is low volume |
 | Cloud AI (optional, off by default) | pay-per-use per provider | Only if approved. Set `LLM_PRICING` to see estimated spend per model in the **AI models** tab; routing simple tasks to the fast tier keeps costs down |
 | Support / maintenance | to be agreed | See ROADMAP.md |
+| Hosted public demo (optional) | pay-per-use | Groq's list rates for `openai/gpt-oss-120b` on 2026-09-24: USD 0.15 per 1M input tokens (0.075 cached) and USD 0.60 per 1M output tokens. List rates, not measured spend. Vercel and Cloudflare have free tiers; check current limits. See [DEPLOYMENT.md](DEPLOYMENT.md) |
 
 ## Cloud AI providers (optional)
 
@@ -58,6 +59,17 @@ Anthropic, OpenAI, Google Gemini, OpenRouter, Azure OpenAI, Groq, Mistral, DeepS
 and AWS Bedrock are supported through their HTTP APIs (no extra SDKs, except `boto3` for Bedrock).
 Each is used only when its API key is set and `ALLOW_CLOUD_AI=true`. Review each provider's
 data-retention and training terms before approval; prefer business/API tiers that exclude training.
+
+## Open-weight models used through a hosted API (public demo only)
+
+| Model | Licence | Notes |
+|---|---|---|
+| gpt-oss-120b / gpt-oss-20b (OpenAI open-weight) | Apache 2.0 | Served by Groq in the hosted demo (https://console.groq.com/docs/model/openai/gpt-oss-120b). The model licence is separate from the hosting provider's service terms. |
+
+## Bundled public documents
+
+Four real public documents are part of the sample data (public domain, OGL v3.0, CC BY-SA 4.0, PDDL);
+sources and licences are listed in [PUBLIC-DOCUMENTS.md](PUBLIC-DOCUMENTS.md).
 
 ## Internet access needed
 

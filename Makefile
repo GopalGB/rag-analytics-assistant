@@ -1,4 +1,4 @@
-.PHONY: setup run demo test lint evaluate sample-data backup verify-backup restore docker docker-up docker-up-ollama reset clean
+.PHONY: setup run demo test test-js lint evaluate evaluate-live sample-data backup verify-backup restore docker docker-up docker-up-ollama reset clean
 
 setup:            ## create venv + install everything (runtime + dev/test)
 	python3 -m venv .venv
@@ -12,12 +12,19 @@ demo: reset       ## fresh demo: clear local state, fix the "as of" date to matc
 
 test:
 	. .venv/bin/activate && pytest
+	@if command -v node >/dev/null; then node --test tests/*.mjs; else echo "(node not installed: skipped the proxy tests)"; fi
+
+test-js:          ## Cloudflare Worker proxy tests (needs Node 18+)
+	node --test tests/*.mjs
 
 lint:
 	. .venv/bin/activate && ruff check .
 
 evaluate:         ## run acceptance checks and write docs/TEST-RESULTS.md
 	. .venv/bin/activate && python scripts/evaluate.py
+
+evaluate-live:    ## end-to-end check of the RUNNING app over HTTP (make evaluate-live URL=http://127.0.0.1:8000)
+	. .venv/bin/activate && python scripts/evaluate_live.py --base-url $${URL:-http://127.0.0.1:8000} --runs 20
 
 sample-data:      ## regenerate the synthetic demo data set
 	. .venv/bin/activate && python scripts/generate_sample_data.py

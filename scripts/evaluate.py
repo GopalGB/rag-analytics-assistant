@@ -275,7 +275,7 @@ def main() -> None:
     out("")
     out("## Automated test suite")
     out("")
-    out("`pytest` runs 180+ unit and end-to-end tests (parsing, OCR, extraction, grounding of AI values, QuickBooks read-only "
+    out("`pytest` runs 220+ unit and end-to-end tests (parsing, OCR, extraction, grounding of AI values, QuickBooks read-only "
         "enforcement and OAuth token handling, reconciliation, approvals, tamper-evident log, API, guardrails). CI runs them "
         "on every push.")
     out("")

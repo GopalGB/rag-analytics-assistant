@@ -9,6 +9,9 @@ Security model (defense in depth — a denylist of function names is NOT relied 
    are rejected — closing direct-path reads and `main._internal` schema-qualified access.
 3. HARD ROW CAP: the query is wrapped in an outer `LIMIT`, so a missing or subquery-only `LIMIT`
    cannot return (or materialize) unbounded rows.
+4. BOUNDED WORK: the row cap does not bound aggregate work, so row generators (`range`,
+   `generate_series`, `unnest`, any table function, `WITH RECURSIVE`) are rejected, each query is
+   interrupted after `query_timeout_seconds`, and the connection has a memory limit.
 
 Ingestion reads CSVs in Python (pandas) and registers them in memory, so the engine never needs
 filesystem access even while loading data.
@@ -26,7 +29,9 @@ import pandas as pd
 
 # Introspection/table functions that expose engine internals. File-reading functions are already
 # impossible (lockdown); this is belt-and-suspenders against metadata disclosure.
-_BLOCKED_TOKENS = ("duckdb_", "pragma_", "sqlite_", "information_schema", "pg_catalog", "glob(")
+_BLOCKED_TOKENS = ("duckdb_", "pragma_", "sqlite_", "information_schema", "pg_catalog", "glob(", "getenv",
+                   "current_setting")
+_ROW_GENERATORS = re.compile(r"\b(range|generate_series|unnest)\s*\(", re.I)
 
 _COMMENT_BLOCK = re.compile(r"/\*.*?\*/", re.S)
 _COMMENT_LINE = re.compile(r"--[^\n]*")
@@ -39,11 +44,18 @@ class UnsafeQueryError(ValueError):
 class DataStore:
     """Owns one DuckDB connection. Thread-safe via a coarse re-entrant lock."""
 
-    def __init__(self, db_path: str):
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    def __init__(self, db_path: str, query_timeout_seconds: float = 2.0, memory_limit: str = "512MB"):
+        if query_timeout_seconds <= 0:
+            raise ValueError("query_timeout_seconds must be positive")
+        if db_path != ":memory:":
+            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self.con = duckdb.connect(db_path)
         # Hard lockdown: queries may not touch the filesystem or network. One-way; never re-enabled.
         self.con.execute("SET enable_external_access=false")
+        if not re.fullmatch(r"\d+(\.\d+)?\s*[KMGT]?i?B", memory_limit, re.I):
+            raise ValueError(f"invalid memory limit: {memory_limit!r}")
+        self.con.execute(f"SET memory_limit='{memory_limit}'")
+        self.query_timeout_seconds = query_timeout_seconds
         self._lock = threading.RLock()
         # Tables loaded from spreadsheet files in the data dir (vs. tables the app manages itself,
         # like extracted invoices or QuickBooks data). Only these are dropped when a file disappears.
@@ -117,13 +129,26 @@ class DataStore:
         # Reject file-reading table functions up front for a clear error (lockdown also blocks them).
         if re.search(r"\bread_\w+\s*\(", lowered) or re.search(r"\b\w+_scan\s*\(", lowered):
             raise UnsafeQueryError("file-reading functions are not allowed")
+        if re.search(r"\bwith\s+recursive\b", lowered):
+            raise UnsafeQueryError("recursive queries are not allowed")
+        if _ROW_GENERATORS.search(cleaned):
+            raise UnsafeQueryError("unsupported table function (row generators are not allowed)")
         self._assert_tables_allowed(cleaned)
 
-        wrapped = f"SELECT * FROM (\n{cleaned}\n) AS _capped LIMIT {int(max_rows)}"
+        max_rows = max(1, min(int(max_rows), 200))
+        wrapped = f"SELECT * FROM (\n{cleaned}\n) AS _capped LIMIT {max_rows}"
         with self._lock:
-            cur = self.con.execute(wrapped)
-            columns = [d[0] for d in cur.description]
-            rows = cur.fetchmany(int(max_rows))
+            timer = threading.Timer(self.query_timeout_seconds, self.con.interrupt)
+            timer.start()
+            try:
+                cur = self.con.execute(wrapped)
+                columns = [d[0] for d in cur.description]
+                rows = cur.fetchmany(max_rows)
+            except duckdb.InterruptException as exc:
+                raise UnsafeQueryError("query execution exceeded the time limit") from exc
+            finally:
+                timer.cancel()
+                timer.join()
         return columns, rows
 
     @staticmethod
@@ -161,6 +186,8 @@ class DataStore:
 
         def walk(node: object) -> None:
             if isinstance(node, dict):
+                if node.get("type") == "TABLE_FUNCTION":
+                    raise UnsafeQueryError("table functions are not allowed")
                 name = node.get("table_name")
                 if isinstance(name, str):
                     referenced.append(name)
