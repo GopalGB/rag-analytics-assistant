@@ -53,3 +53,7 @@ def test_scrub_redacts_secret_and_code():
     assert "sk-abcdef" not in out
     assert "print(1)" not in out
     assert "[redacted]" in out
+
+
+def test_scrub_redacts_groq_key_shape():
+    assert "gsk_" not in scrub("gsk_abcdefghijklmnopqrstuvwxyz123456")

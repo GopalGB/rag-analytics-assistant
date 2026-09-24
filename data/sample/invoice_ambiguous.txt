@@ -1,0 +1,6 @@
+SYNTHETIC INTERVIEW-DEMO DATA
+Invoice INV-AMBIGUOUS
+Vendor: Fictional Vendor
+Quantity: two
+Unit price: negotiable
+Total: unclear

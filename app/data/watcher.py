@@ -46,9 +46,20 @@ def reindex(engine: AgentEngine, data_dir: str) -> dict:
     for table in engine.store.tables():
         if table not in loaded:
             engine.store.drop_table(table)
-    new_retriever = Retriever(engine.retriever.embeddings).build(ingest.load_chunks(data_dir))
+    chunks = []
+    errors = []
+    for path in ingest.source_paths(Path(data_dir), ingest._DOC_SUFFIXES):
+        try:
+            for i, piece in enumerate(ingest.chunk_text(ingest.read_document(path))):
+                from app.rag.retriever import Chunk
+
+                chunks.append(Chunk(file=path.name, chunk_id=i, text=piece))
+        except ingest.DocumentReadError as exc:
+            errors.append({"file": path.name, "error": str(exc)})
+    new_retriever = Retriever(engine.retriever.embeddings).build(chunks)
     engine.retriever = new_retriever
-    return {"tables": loaded, "doc_chunks": len(new_retriever.chunks)}
+    engine.invoice_records = ingest.invoice_records(data_dir)
+    return {"tables": loaded, "doc_chunks": len(new_retriever.chunks), "errors": errors}
 
 
 async def run_watcher(engine: AgentEngine, data_dir: str, interval_seconds: int, stop: asyncio.Event) -> None:

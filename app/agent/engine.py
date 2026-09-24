@@ -8,6 +8,7 @@ fast (see `require_llm`), so this path is only reachable when the operator expli
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from app.agent.llm import BaseLLM
@@ -26,6 +27,7 @@ class AgentEngine:
         guard: InputGuard,
         llm: BaseLLM | None,
         memory: ConversationMemory,
+        invoice_records: list[dict] | None = None,
         max_tool_iterations: int = 4,
         max_sql_rows: int = 200,
     ):
@@ -34,6 +36,7 @@ class AgentEngine:
         self.guard = guard
         self.llm = llm
         self.memory = memory
+        self.invoice_records = invoice_records or []
         self.max_tool_iterations = max_tool_iterations
         self.max_sql_rows = max_sql_rows
 
@@ -45,7 +48,7 @@ class AgentEngine:
             "doc_chunks": len(self.retriever.chunks),
         }
 
-    def answer(self, session_id: str, question: str) -> dict[str, Any]:
+    def answer(self, session_id: str, question: str, remember: bool = True) -> dict[str, Any]:
         decision = self.guard.inspect(question)
         if decision.category == "greeting":
             return {
@@ -75,26 +78,39 @@ class AgentEngine:
                 "sources": [],
             }
 
-        payload = self._agentic(session_id, question)
+        payload = self._agentic(question, self.memory.history(session_id) if remember else [])
+        if not payload["sources"]:
+            abstained = {
+                "text": "I don't have retrieved evidence for that answer. Ask about the loaded documents or tables.",
+                "route": "abstained",
+                "sql": None,
+                "sources": [],
+                "timings_ms": payload["timings_ms"],
+            }
+            if "usage" in payload:
+                abstained["usage"] = payload["usage"]
+            return abstained
         payload["text"] = scrub(payload.get("text", ""))
-        self.memory.add(session_id, "user", question)
-        self.memory.add(session_id, "assistant", payload["text"])
+        if remember:
+            self.memory.add(session_id, "user", question)
+            self.memory.add(session_id, "assistant", payload["text"])
         return payload
 
-    def _agentic(self, session_id: str, question: str) -> dict[str, Any]:
-        toolbox = ToolBox(self.store, self.retriever, max_rows=self.max_sql_rows)
+    def _agentic(self, question: str, history: list[dict[str, str]]) -> dict[str, Any]:
+        toolbox = ToolBox(self.store, self.retriever, max_rows=self.max_sql_rows, invoice_records=self.invoice_records)
         system = build_system_prompt(self.store.schema_summary(), self.retriever.doc_summary())
         # The provider runs its own native tool-calling loop and records artifacts on the toolbox.
+        started = time.perf_counter()
         final_text = self.llm.converse(
             system=system,
-            history=self.memory.history(session_id),
+            history=history,
             question=question,
             toolbox=toolbox,
             max_iters=self.max_tool_iterations,
         )
 
         table_preview = [dict(zip(toolbox.columns, r, strict=False)) for r in toolbox.rows[:100]]
-        return {
+        payload = {
             "text": final_text,
             "route": "agent",
             "sql": toolbox.last_sql,
@@ -102,4 +118,11 @@ class AgentEngine:
             "rows": table_preview,
             "row_count": len(toolbox.rows),
             "sources": toolbox.sources,
+            "timings_ms": {**toolbox.timings_ms, "model": round((time.perf_counter() - started) * 1000, 2)},
         }
+        usage_getter = getattr(self.llm, "request_usage", None)
+        usage = usage_getter() if callable(usage_getter) else None
+        if usage:
+            model = getattr(self.llm, "model", getattr(self.llm, "model_id", None))
+            payload["usage"] = {**usage, **({"model": model} if model else {})}
+        return payload

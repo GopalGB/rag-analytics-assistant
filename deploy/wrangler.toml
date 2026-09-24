@@ -1,0 +1,12 @@
+name = "rag-assistant-proxy"
+main = "rag-assistant-worker.mjs"
+compatibility_date = "2026-09-24"
+account_id = "0d96b8b61cfec65506a8107e36ebfb08"
+
+routes = [
+  { pattern = "gopalbagaswar.com/rag-assistant", zone_id = "dcd2d224e5abaf88faa73612b4a1cfb4" },
+  { pattern = "gopalbagaswar.com/rag-assistant/*", zone_id = "dcd2d224e5abaf88faa73612b4a1cfb4" }
+]
+
+[vars]
+VERCEL_ORIGIN = "https://rag-analytics-assistant.vercel.app"

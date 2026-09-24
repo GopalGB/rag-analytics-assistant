@@ -12,10 +12,21 @@ venv/
 
 # Local secrets & state
 .env
+.env.*
+*.pem
+*.key
+credentials.json
+.planning/
 storage/*.duckdb
 storage/*.duckdb.wal
 storage/*.log
 storage/*.jsonl
+codedb.snapshot
+logs/
 
 # OS
 .DS_Store
+.vercel
+.code-review-graph/
+.deepeval/
+.gstack/

@@ -19,10 +19,63 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import subprocess
+from contextvars import ContextVar
+from pathlib import Path
 from typing import Any, Protocol
 
 from app.agent.tools import TOOLS, ToolBox
+
+# The application shares each provider instance across FastAPI worker threads.  Usage belongs
+# to one conversation, so keep it in the execution context rather than on the provider object.
+_REQUEST_USAGE: ContextVar[dict[str, int] | None] = ContextVar("request_usage", default=None)
+MAX_COMPLETION_TOKENS = 1024
+
+
+class ProviderRateLimitError(RuntimeError):
+    """A provider 429 with an optional, bounded retry hint safe for API clients."""
+
+    def __init__(self, retry_after: int | None):
+        self.retry_after = retry_after if isinstance(retry_after, int) and 0 < retry_after <= 3600 else None
+        super().__init__("model provider is rate limited")
+
+
+def _add_usage(current: dict[str, int] | None, raw: Any) -> dict[str, int] | None:
+    if not isinstance(raw, dict):
+        return current
+    def value(*names: str) -> int | None:
+        for name in names:
+            candidate = raw.get(name)
+            if isinstance(candidate, int) and not isinstance(candidate, bool):
+                return candidate
+        return None
+
+    input_tokens = value("prompt_tokens", "input_tokens", "inputTokens")
+    output_tokens = value("completion_tokens", "output_tokens", "outputTokens")
+    total_tokens = value("total_tokens", "totalTokens")
+    if total_tokens is None and input_tokens is not None and output_tokens is not None:
+        total_tokens = input_tokens + output_tokens
+    if input_tokens is None and output_tokens is None and total_tokens is None:
+        return current
+    result = current or {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    for key, amount in (("input_tokens", input_tokens), ("output_tokens", output_tokens), ("total_tokens", total_tokens)):
+        if amount is not None:
+            result[key] += amount
+    return result
+
+
+def _reset_usage() -> None:
+    _REQUEST_USAGE.set(None)
+
+
+def _record_usage(raw: Any) -> None:
+    _REQUEST_USAGE.set(_add_usage(_REQUEST_USAGE.get(), raw))
+
+
+def _request_usage() -> dict[str, int] | None:
+    usage = _REQUEST_USAGE.get()
+    return dict(usage) if usage else None
 
 
 class BaseLLM(Protocol):
@@ -32,20 +85,33 @@ class BaseLLM(Protocol):
         self, system: str, history: list[dict[str, str]], question: str, toolbox: ToolBox, max_iters: int
     ) -> str: ...
 
+    def request_usage(self) -> dict[str, int] | None: ...
+
 
 # --------------------------------------------------------------------------- OpenAI
 class OpenAILLM:
     supports_tools = True
 
-    def __init__(self, api_key: str, base_url: str, model: str):
+    def __init__(self, api_key: str, base_url: str, model: str, max_completion_tokens: int = MAX_COMPLETION_TOKENS):
+        if not 1 <= max_completion_tokens <= MAX_COMPLETION_TOKENS:
+            raise ValueError(f"max_completion_tokens must be between 1 and {MAX_COMPLETION_TOKENS}")
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.max_completion_tokens = max_completion_tokens
+
+    def request_usage(self) -> dict[str, int] | None:
+        return _request_usage()
 
     def _call(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None) -> dict[str, Any]:
         import requests  # imported lazily; only exercised on the OpenAI provider path
 
-        body: dict[str, Any] = {"model": self.model, "messages": messages, "temperature": 0.1}
+        body: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": 0.1,
+            "max_completion_tokens": self.max_completion_tokens,
+        }
         if tools:
             body["tools"] = tools
         resp = requests.post(
@@ -54,10 +120,19 @@ class OpenAILLM:
             json=body,
             timeout=60,
         )
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError as exc:
+            if resp.status_code == 429:
+                retry_after = resp.headers.get("retry-after")
+                raise ProviderRateLimitError(int(retry_after) if retry_after and retry_after.isdigit() else None) from exc
+            raise
+        payload = resp.json()
+        _record_usage(payload.get("usage"))
+        return payload["choices"][0]["message"]
 
     def converse(self, system, history, question, toolbox, max_iters):
+        _reset_usage()
         messages: list[dict[str, Any]] = [{"role": "system", "content": system}]
         messages.extend(history)
         messages.append({"role": "user", "content": question})
@@ -97,6 +172,9 @@ class BedrockLLM:
             client = boto3.client("bedrock-runtime", region_name=region)
         self.client = client
 
+    def request_usage(self) -> dict[str, int] | None:
+        return _request_usage()
+
     @staticmethod
     def _tool_config() -> dict[str, Any]:
         return {
@@ -117,6 +195,7 @@ class BedrockLLM:
         return " ".join(c["text"] for c in message.get("content", []) if "text" in c).strip()
 
     def converse(self, system, history, question, toolbox, max_iters):
+        _reset_usage()
         messages: list[dict[str, Any]] = [
             {"role": m["role"], "content": [{"text": m["content"]}]} for m in history
         ]
@@ -132,6 +211,7 @@ class BedrockLLM:
                 toolConfig=tool_config,
                 inferenceConfig={"temperature": 0.1},
             )
+            _record_usage(resp.get("usage"))
             out = resp["output"]["message"]
             messages.append(out)
             tool_uses = [c["toolUse"] for c in out.get("content", []) if "toolUse" in c]
@@ -150,6 +230,7 @@ class BedrockLLM:
             messages=messages,
             inferenceConfig={"temperature": 0.1},
         )
+        _record_usage(resp.get("usage"))
         return self._text(resp["output"]["message"])
 
 
@@ -179,14 +260,27 @@ class CommandLLM:
         self.command = command
         self.timeout = timeout
 
+    def request_usage(self) -> dict[str, int] | None:
+        return _request_usage()
+
     def _run(self, prompt: str) -> str:
         try:
             proc = subprocess.run(
-                self.command, shell=True, input=prompt, capture_output=True, text=True, timeout=self.timeout
+                self._argv(), shell=False, input=prompt, capture_output=True, text=True, timeout=self.timeout
             )
         except subprocess.TimeoutExpired:
             return ""
         return proc.stdout.strip() if proc.returncode == 0 else ""
+
+    def _argv(self) -> list[str]:
+        # Unquoted executable paths may contain spaces: take the shortest leading run of tokens
+        # that names an existing file as the executable; everything after it stays an argument.
+        parts = shlex.split(self.command)
+        for i in range(1, len(parts) + 1):
+            candidate = " ".join(parts[:i])
+            if Path(candidate).is_file():
+                return [candidate, *parts[i:]]
+        return parts
 
     @staticmethod
     def _render(system: str, turns: list[dict[str, str]], question: str) -> str:
@@ -198,6 +292,7 @@ class CommandLLM:
         return "\n\n".join(parts)
 
     def converse(self, system, history, question, toolbox, max_iters):
+        _reset_usage()
         system = system + "\n\n" + _tool_protocol_instructions()
         turns = list(history)
         for _ in range(max_iters):
