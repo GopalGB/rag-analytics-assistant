@@ -71,7 +71,10 @@ class AuditLog:
         with self.path.open(encoding="utf-8") as fh:
             for line in fh:
                 if line.strip():
-                    out.append(json.loads(line))
+                    try:
+                        out.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        out.append({"_unreadable": True})
         return out
 
     def tail(self, limit: int = 100) -> list[dict[str, Any]]:
@@ -84,13 +87,19 @@ class AuditLog:
             for line in fh:
                 if line.strip():
                     buf.append(line)
-        return [json.loads(line) for line in buf]
+        out = []
+        for line in buf:
+            try:
+                out.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue  # verify() reports it; reading the log must not crash the app
+        return out
 
     def verify(self) -> dict[str, Any]:
         prev = GENESIS
         entries = self._entries()
         for i, e in enumerate(entries):
-            if e.get("prev") != prev or _digest(e) != e.get("hash"):
+            if e.get("_unreadable") or e.get("prev") != prev or _digest(e) != e.get("hash"):
                 return {"ok": False, "entries": len(entries), "broken_at": i + 1}
             prev = e["hash"]
         return {"ok": True, "entries": len(entries)}

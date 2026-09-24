@@ -295,7 +295,7 @@ def main() -> None:
         ("planted problems flagged", flags_ok, len(EXPECTED_FLAGS)),
         ("search questions with the right document first", top1, len(SEARCH_CASES)),
         ("answerable questions still answered", answered, len(SEARCH_CASES)),
-        ("reworded questions found", para_ok, 4 if not embeddings.semantic else 6),
+        ("reworded questions found", para_ok, 4 if embeddings.active == "local" else 6),
         ("unanswerable questions answered 'not found'", nf_ok, len(NOT_FOUND_CASES)),
         ("invoices reconciled against QuickBooks", recon_ok, len(EXPECTED_RECON)),
         ("bank outcomes found", bank_ok, len(EXPECTED_BANK)),

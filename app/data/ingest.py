@@ -56,15 +56,29 @@ def load_tables(store: DataStore, data_dir: str) -> dict[str, int]:
     """Load every CSV/XLSX under `data_dir` as a table named after the file stem. Returns {table: rows}."""
     loaded: dict[str, int] = {}
     failed: set[str] = set()
-    for path, _rel in iter_files(data_dir, _TABLE_SUFFIXES):
-        table = _safe_table_name(path.stem)
+    for path, rel in iter_files(data_dir, _TABLE_SUFFIXES):
+        table = _unique_table_name(path, rel, loaded.keys() | failed)
         try:
             loaded[table] = store.load_dataframe(table, _read_table(path))
         except Exception:
-            # Unreadable right now (e.g. mid-copy): keep the previous table; retried on the next reindex.
+            # Unreadable right now (e.g. mid-copy): keep the previous table, and report it so the watcher
+            # retries even if the folder doesn't change again.
             failed.add(table)
     store.file_tables = set(loaded) | (failed & store.file_tables)
+    store.failed_tables = failed
     return loaded
+
+
+def _unique_table_name(path: Path, rel: str, taken: set[str]) -> str:
+    """Table name from the file name; if another spreadsheet already has it (same name in another folder,
+    or `invoice_lines.csv` next to `file_invoice_lines.csv`), use the relative path, then a number."""
+    name = _safe_table_name(path.stem)
+    if name in taken:
+        name = _safe_table_name(rel.rsplit(".", 1)[0])
+    base, n = name, 2
+    while name in taken:
+        name, n = f"{base}_{n}", n + 1
+    return name
 
 
 def load_documents(data_dir: str, ocr: OCREngine | None = None, cache: ParseCache | None = None) -> list[ParsedDocument]:

@@ -60,6 +60,7 @@ class DataStore:
         # Tables loaded from spreadsheet files in the data dir (vs. tables the app manages itself,
         # like extracted invoices or QuickBooks data). Only these are dropped when a file disappears.
         self.file_tables: set[str] = set()
+        self.failed_tables: set[str] = set()  # spreadsheets that could not be read on the last load
 
     # ---- introspection -------------------------------------------------
     def tables(self) -> list[str]:

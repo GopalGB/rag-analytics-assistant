@@ -166,7 +166,7 @@ const TOOL_LABEL = { search_docs: "Searching documents", run_sql: "Querying data
 async function askStream(question, live) {
   // Server-sent events: progress steps, scrubbed text snapshots, then the final payload.
   const r = await fetch(u("chat/stream"), { method: "POST", headers: headers(), body: JSON.stringify({ question, session_id: sessionId }) });
-  if (!r.ok || !r.body) throw new Error("stream unavailable");
+  if (!r.ok || !r.body) { const e = new Error("stream unavailable"); e.fallback = true; throw e; }
   const reader = r.body.getReader(), dec = new TextDecoder();
   let buf = "", final = null;
   const step = (text) => live.progress.append(el("span", { class: "step", text }));
@@ -201,7 +201,10 @@ async function ask(question) {
   try {
     let p;
     try { p = await askStream(question, live); }
-    catch (streamErr) { p = await api("/chat", { method: "POST", body: JSON.stringify({ question, session_id: sessionId }) }); }
+    catch (streamErr) {
+      if (!streamErr.fallback) throw streamErr;  // the server already answered or reported an error
+      p = await api("/chat", { method: "POST", body: JSON.stringify({ question, session_id: sessionId }) });
+    }
     thinking.remove(); addMsg(p.route === "refused" ? "bot refused" : "bot", p.text || "(no answer)", p);
     if (p.actions && p.actions.length) refreshHealth();
   } catch (e) { thinking.remove(); addMsg("bot", "Something went wrong: " + e.message); }

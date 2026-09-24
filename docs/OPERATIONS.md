@@ -74,7 +74,9 @@ make docker-up        # builds the image and starts it on 127.0.0.1:8000
 ```
 
 The container runs as a non-root user with a read-only filesystem; `data/` and `storage/` are volumes.
-Ollama stays on the Mac (it needs the GPU) and is reached at `host.docker.internal:11434`.
+Ollama stays on the Mac (it needs the GPU) and is reached at `host.docker.internal:11434`. On a Linux
+server, `make docker-up-ollama` also runs Ollama in a container; compose declares that service as local with
+`LOCAL_MODEL_HOSTS=ollama` (only names listed there, `localhost`, `*.local` and private IPs count as local).
 
 ## Configuration
 

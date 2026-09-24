@@ -58,7 +58,8 @@ def reindex(
     new_retriever.build(ingest.chunk_documents(docs))
     engine.retriever = new_retriever
     engine.documents = docs
-    return {"tables": loaded, "documents": len(docs), "doc_chunks": len(new_retriever.chunks)}
+    return {"tables": loaded, "documents": len(docs), "doc_chunks": len(new_retriever.chunks),
+            "failed_tables": sorted(engine.store.failed_tables)}
 
 
 async def run_watcher(
@@ -79,7 +80,9 @@ async def run_watcher(
         try:
             sig = dir_signature(data_dir)
             if sig != last_sig:
-                await asyncio.to_thread(reindex_fn)
+                result = await asyncio.to_thread(reindex_fn)
+                if isinstance(result, dict) and result.get("failed_tables"):
+                    continue  # a spreadsheet couldn't be read yet: keep last_sig so the next tick retries
                 last_sig = sig
         except Exception:
             # Transient (e.g. a file mid-copy). Leave last_sig unchanged so we retry next tick.

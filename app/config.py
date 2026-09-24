@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     # Host names the server answers to (DNS-rebinding defence). Add the Mac's LAN name/IP when serving
     # other machines, or the public domain for a hosted demo. "*" disables the check.
     allowed_hosts: str = "127.0.0.1,localhost,::1"
+    # Model-server host names to treat as local (e.g. "ollama" for the docker compose service). Only list
+    # names that resolve to this machine or your own network: local models may read any data class.
+    local_model_hosts: str = ""
     # Extra browser origins allowed to POST (a proxy in front of a hosted demo), comma-separated.
     allowed_origins: str = ""
 

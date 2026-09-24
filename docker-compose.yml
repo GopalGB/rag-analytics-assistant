@@ -17,6 +17,7 @@ services:
     environment:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
       TRUST_LOOPBACK: "false"   # inside Docker every request looks non-local; set APP_API_KEY in .env
+      LOCAL_MODEL_HOSTS: "ollama"   # the compose Ollama service runs on this machine
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

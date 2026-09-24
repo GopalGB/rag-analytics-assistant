@@ -32,6 +32,7 @@ from app.integrations.quickbooks import MockQuickBooks, QuickBooksOnline, TokenS
 from app.invoices.registry import InvoiceRegistry, is_invoice_document
 from app.llm.intent import IntentRouter
 from app.llm.privacy import PrivacyPolicy, PrivacyRouter
+from app.llm.providers import set_trusted_local_hosts
 from app.llm.registry import PROVIDERS, build_chain
 from app.llm.router import ModelRouter, parse_pricing
 from app.observability import record_model_call
@@ -65,6 +66,7 @@ class Workspace:
                            "mistral_api_key", "deepseek_api_key", "together_api_key", "xai_api_key",
                            "azure_openai_api_key", "qbo_client_secret", "app_api_key"):
             register_secret(getattr(settings, field_name, None))
+        set_trusted_local_hosts(settings.local_model_hosts)
         self.router = self._build_router()
         self.llm = self.router.primary
         self.llm_note = self._router_note()

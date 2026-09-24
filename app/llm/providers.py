@@ -60,14 +60,23 @@ class BaseLLM(Protocol):
     def complete(self, system: str, prompt: str) -> str: ...
 
 
+TRUSTED_LOCAL_HOSTS: set[str] = set()
+
+
+def set_trusted_local_hosts(hosts: str | None) -> None:
+    """Host names the operator declares to be on this machine / the local container network."""
+    TRUSTED_LOCAL_HOSTS.clear()
+    TRUSTED_LOCAL_HOSTS.update(h.strip().lower() for h in (hosts or "").split(",") if h.strip())
+
+
 def is_local_url(url: str) -> bool:
     """True for this machine or a private/LAN address (an on-premises model server)."""
     host = (urlparse(url).hostname or "").lower()
     # host.docker.internal = the Mac itself when the app runs in a container (e.g. Ollama on the host).
-    # A single-label name (e.g. the compose service "ollama") only resolves on the local/container network.
+    # Other names (e.g. the compose service "ollama") count as local only when listed in LOCAL_MODEL_HOSTS.
     if host in {"localhost", "0.0.0.0", "host.docker.internal"} or host.endswith(".local"):
         return True
-    if host and "." not in host and ":" not in host:
+    if host in TRUSTED_LOCAL_HOSTS:
         return True
     try:
         ip = ipaddress.ip_address(host)
@@ -526,7 +535,12 @@ class BedrockLLM:
         kw = {"system": system_blocks, "messages": messages, "inferenceConfig": {"temperature": 0.1}}
         if tool_config["tools"]:
             kw["toolConfig"] = tool_config
-        return self._text(self._converse(**kw)["output"]["message"])
+        final = self._converse(**kw)["output"]["message"]
+        text = self._text(final)
+        if not text and any("toolUse" in c for c in final.get("content", [])):
+            # Converse has no "no more tools" choice; don't mistake another tool call for an empty answer.
+            raise LLMError("bedrock: the model kept calling tools after its tool budget was used", retryable=True)
+        return text
 
     def complete(self, system: str, prompt: str) -> str:
         resp = self._converse(system=[{"text": system}], messages=[{"role": "user", "content": [{"text": prompt}]}],

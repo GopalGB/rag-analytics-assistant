@@ -275,8 +275,9 @@ def review_invoice(invoice_id: str, body: ReviewIn, request: Request) -> dict:
         raise HTTPException(status_code=404, detail="invoice not found") from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    ws.store.load_dataframe("invoices", ws.invoices.dataframe())
-    ws._reconcile()
+    with ws._lock:  # reindex() and sync_qbo() rebuild the same tables
+        ws.store.load_dataframe("invoices", ws.invoices.dataframe())
+        ws._reconcile()
     ws.audit.record(
         "invoice.reviewed", actor=body.reviewer or _actor(request), file=rec.file, status=rec.status,
         corrected_fields=sorted(body.corrections), note=body.note[:200],
@@ -339,9 +340,10 @@ def qbo_disconnect(request: Request) -> dict:
     ws = _ws(request)
     if isinstance(ws.qbo, QuickBooksOnline):
         ws.qbo.revoke()
-    for table in [t for t in ws.store.tables() if t.startswith("qbo_") or t in ("invoice_reconciliation", "bank_reconciliation")]:
-        ws.store.drop_table(table)
-    ws.last_qbo_sync = None
+    with ws._lock:
+        for table in [t for t in ws.store.tables() if t.startswith("qbo_") or t in ("invoice_reconciliation", "bank_reconciliation")]:
+            ws.store.drop_table(table)
+        ws.last_qbo_sync = None
     ws.audit.record("qbo.disconnected", actor=_actor(request), tokens_revoked=isinstance(ws.qbo, QuickBooksOnline))
     return {"status": "disconnected", "note": "Access revoked and the local QuickBooks copy was deleted."}
 

@@ -81,7 +81,7 @@ def test_memory_can_be_off_and_is_bounded():
 # --------------------------------------------------------------------------- SQL work limits
 @pytest.fixture
 def sql_store(tmp_path):
-    s = DataStore(str(tmp_path / "s.duckdb"), query_timeout_seconds=0.3)
+    s = DataStore(str(tmp_path / "s.duckdb"), query_timeout_seconds=1.0)  # generous: CI machines can be busy
     s.load_dataframe("sales", pd.DataFrame({"v": range(200)}))
     yield s
     s.close()
@@ -102,7 +102,7 @@ def test_row_generators_and_settings_are_blocked(sql_store, sql, message):
 
 def test_slow_query_is_interrupted_and_store_still_works(sql_store):
     with pytest.raises(UnsafeQueryError, match="time limit"):
-        sql_store.run_select("SELECT count(*) FROM sales a, sales b, sales c, sales d, sales e")
+        sql_store.run_select("SELECT count(*) FROM sales a, sales b, sales c, sales d, sales e, sales f")
     assert sql_store.run_select("SELECT sum(v) FROM sales")[1] == [(19900,)]
     assert len(sql_store.run_select("SELECT * FROM sales", max_rows=10_000)[1]) == 200  # row cap clamps
 

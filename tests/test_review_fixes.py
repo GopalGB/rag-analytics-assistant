@@ -198,9 +198,17 @@ def test_unicode_reviewer_name_round_trips():
     assert _actor(Request(scope)) == "王芳 Андрей"
 
 
-def test_container_service_names_are_local():
-    assert is_local_url("http://ollama:11434/v1")
+def test_only_declared_service_names_are_local():
+    from app.llm.providers import set_trusted_local_hosts
+
     assert is_local_url("http://host.docker.internal:11434/v1")
+    assert not is_local_url("http://ollama:11434/v1")  # a bare name could resolve anywhere
+    assert not is_local_url("http://model-gateway/v1")
+    set_trusted_local_hosts("ollama")
+    try:
+        assert is_local_url("http://ollama:11434/v1") and not is_local_url("http://model-gateway/v1")
+    finally:
+        set_trusted_local_hosts("")
     assert not is_local_url("https://api.groq.com/openai/v1")
 
 
@@ -260,3 +268,75 @@ def test_restore_refuses_to_overwrite_documents_without_force(tmp_path):
     assert (data / "lease.docx").read_bytes() == b"current" and not storage.exists()
     mod.restore(archive, True, settings)
     assert (data / "lease.docx").read_bytes() == b"old"
+
+
+# --------------------------------------------------------------------------- second review round
+def test_spreadsheets_never_share_a_table(tmp_path):
+    root = tmp_path / "data"
+    (root / "2025").mkdir(parents=True)
+    (root / "2026").mkdir()
+    (root / "2025" / "budget.csv").write_text("a\n1\n")
+    (root / "2026" / "budget.csv").write_text("a\n2\n")
+    (root / "invoice_lines.csv").write_text("a\n3\n")
+    (root / "file_invoice_lines.csv").write_text("a\n4\n")
+    store = DataStore(str(tmp_path / "t.duckdb"))
+    loaded = ingest.load_tables(store, str(root))
+    assert len(loaded) == 4 and len(store.file_tables) == 4
+    values = sorted(store.run_select(f'SELECT a FROM "{t}"')[1][0][0] for t in loaded)
+    assert values == [1, 2, 3, 4]
+    store.close()
+
+
+def test_watcher_retries_when_a_spreadsheet_could_not_be_read(tmp_path):
+    import asyncio
+
+    (tmp_path / "x.csv").write_text("a\n1\n")
+    calls = []
+
+    def reindex():
+        calls.append(1)
+        if len(calls) == 1:
+            (tmp_path / "y.csv").write_text("a\n2\n")  # changes the folder once
+            return {"failed_tables": ["y"]}
+        return {"failed_tables": []}
+
+    async def run():
+        stop = asyncio.Event()
+        task = asyncio.create_task(watcher.run_watcher(reindex, str(tmp_path), 0, stop))
+        await asyncio.sleep(0.05)  # let the watcher take its first snapshot
+        (tmp_path / "z.csv").write_text("a\n3\n")
+        for _ in range(1000):  # up to 10 s on a busy machine; normally a few ticks
+            await asyncio.sleep(0.01)
+            if len(calls) >= 2:
+                break
+        stop.set()
+        await task
+
+    asyncio.run(run())
+    assert len(calls) >= 2  # retried without any further change to the folder
+
+
+def test_bedrock_tool_call_after_budget_is_an_error(store, retriever):
+    from app.llm.providers import BedrockLLM, LLMError
+
+    llm = BedrockLLM.__new__(BedrockLLM)
+    replies = iter([{"output": {"message": {"role": "assistant", "content": [
+        {"toolUse": {"toolUseId": f"t{i}", "name": "search_docs", "input": {"query": "x"}}}]}}} for i in range(3)])
+    llm._converse = lambda **kw: next(replies)
+    llm._tool_config = lambda tb: {"tools": [{"toolSpec": {"name": "search_docs"}}]}
+    with pytest.raises(LLMError, match="tool budget"):
+        llm._converse_all("s", [], "q", ToolBox(store, retriever), 2)
+
+
+def test_unreadable_audit_line_is_reported_not_fatal(tmp_path):
+    from app.audit import AuditLog
+
+    path = tmp_path / "audit.jsonl"
+    log = AuditLog(path)
+    log.record("a")
+    log.record("b")
+    with path.open("a") as fh:
+        fh.write('{"ts": "truncated')  # a crash mid-write
+    reopened = AuditLog(path)  # must not raise
+    assert reopened.verify() == {"ok": False, "entries": 3, "broken_at": 3}
+    assert [e["event"] for e in reopened.tail(5)] == ["a", "b"]
