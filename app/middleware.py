@@ -9,7 +9,15 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-PUBLIC_PREFIXES = ("/health", "/ui", "/static")
+PUBLIC_PREFIXES = ("/health", "/ready", "/ui", "/static")
+
+# Strict CSP for the app: scripts only from this origin (no inline JS), no framing, no plugins, no
+# third-party connections. Inline styles are allowed (the UI sets style attributes on elements).
+CSP = (
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+    "connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; "
+    "frame-ancestors 'none'"
+)
 PUBLIC_EXACT = {"/", "/favicon.ico"}
 
 
@@ -24,6 +32,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
         response.headers.setdefault("Cache-Control", "no-store")
+        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+        response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+        if not request.url.path.startswith("/files/"):  # original PDFs open in the browser's viewer
+            response.headers.setdefault("Content-Security-Policy", CSP)
         return response
 
 

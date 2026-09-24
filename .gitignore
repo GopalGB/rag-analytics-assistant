@@ -19,3 +19,6 @@ data/sample/uploads/
 
 # OS
 .DS_Store
+
+# Backups (may contain documents and, with --include-env, API keys)
+backups/

@@ -161,7 +161,7 @@ def test_sync_and_reconcile(tmp_path):
         assert "AFC-3302" in orphans
         reconcile.load_reconciliation(store, rows)
         summary = reports.build_summary(store)
-        assert summary["sections"]["payables"]["open_bills"] == 6
+        assert summary["sections"]["payables"]["open_bills"] == 5  # Harbor Waste bill is marked paid
         assert "Needs attention" in reports.to_markdown(summary)
     finally:
         store.close()

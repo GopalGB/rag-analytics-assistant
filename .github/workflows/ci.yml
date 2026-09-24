@@ -25,3 +25,25 @@ jobs:
         run: pytest
       - name: Acceptance checks
         run: python scripts/evaluate.py
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t private-ai-assistant:ci .
+      - name: Start container and wait until ready
+        run: |
+          docker run -d --name assistant -p 127.0.0.1:8000:8000 \
+            -v "$PWD/data/sample:/data" -e LLM_PROVIDER=none private-ai-assistant:ci
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8000/ready; then exit 0; fi
+            sleep 3
+          done
+          docker logs assistant
+          exit 1
+      - name: Smoke-test the API
+        run: |
+          curl -fsS http://127.0.0.1:8000/health
+          curl -fsS http://127.0.0.1:8000/dashboard > /dev/null
+          curl -fsS http://127.0.0.1:8000/metrics | grep assistant_http_requests_total

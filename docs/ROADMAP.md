@@ -9,13 +9,22 @@
   foreign formats. Expect lower accuracy until the extractor is tuned on the company's actual
   suppliers. The confidence scores and review step exist for this reason.
 - Invoice extraction reads header fields (supplier, number, dates, PO, subtotal, tax, total,
-  currency). Line items are not extracted into a table yet.
+  currency) and line items from simple single-line tables (description, qty, unit price, amount), with
+  sum checks. Wrapped descriptions and unusual table layouts may be missed; totals are still checked.
 - Multi-page invoices are read as one text; totals printed only on a later page are found, but table
   structure across pages isn't reconstructed.
 - Ambiguous numeric dates are read using `DATE_ORDER` (default month/day/year) and always flagged.
-- Search uses keyword + an offline hashing embedder. That's strong for names, numbers and terms, weaker
-  for paraphrases ("end of the tenancy" vs "expiry"). A local semantic embedding model is a planned
-  upgrade.
+- Search combines keywords with a local semantic embedding model (`nomic-embed-text`) when Ollama has
+  it, and falls back to an offline hashing embedder otherwise (weaker on paraphrases). On the sample set
+  semantic search found 7/8 reworded questions; a larger, real document set should be measured again.
+- Bank matching uses amounts, dates and references/names on a single statement; split payments,
+  batched payments and multi-currency accounts are not matched yet.
+- Reports are drafts built from the loaded data and flagged as such; they are not a substitute for the
+  accountant's review.
+- The Docker image and CI pipeline are defined, but the image was built in CI, not verified on the Mac
+  Studio itself; on macOS the recommended setup is the native install (Ollama needs the Apple GPU).
+- Streaming, semantic search and model-assisted features were verified with a small (3B) model on CPU;
+  answer quality and speed must be re-measured on the Mac Studio with the chosen model.
 - Spreadsheets load the first sheet of an XLSX only.
 
 **AI model**
@@ -63,8 +72,8 @@ confirmed.
 ### Stage 2: Pilot, ~3–5 weeks
 
 - User sign-in (Microsoft 365 or Google) with roles: viewer, reviewer, approver.
-- Semantic local embeddings; line-item extraction; multi-page invoice tables; bank-statement import
-  and matching of payments to bills.
+- Multi-page invoice tables; bank feeds straight from the bank or QuickBooks; split/batched payment
+  matching; scheduled reports.
 - **Read-only** email search and summaries (Microsoft Graph or Gmail API with minimum scopes);
   drafted replies go to the Approvals queue, never sent automatically.
 - QuickBooks **production, read-only**, after Intuit app approval; scheduled daily sync.

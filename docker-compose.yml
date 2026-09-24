@@ -1,0 +1,40 @@
+# docker compose up -d        → the assistant on http://127.0.0.1:8000 (bound to this machine only)
+# docker compose --profile ollama up -d   → also run Ollama in a container (Linux; CPU/NVIDIA)
+#
+# On a Mac Studio, prefer native Ollama (Metal GPU): keep the default OLLAMA_BASE_URL below.
+services:
+  assistant:
+    build: .
+    image: private-ai-assistant:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"   # never exposed beyond this machine unless you change it (and set APP_API_KEY)
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
+      TRUST_LOOPBACK: "false"   # inside Docker every request looks non-local; set APP_API_KEY in .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data/sample:/data            # replace with your documents folder when approved
+      - assistant-storage:/storage     # database, reviews, approvals, activity log, tokens
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+  ollama:
+    profiles: ["ollama"]
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+
+volumes:
+  assistant-storage:
+  ollama-models:

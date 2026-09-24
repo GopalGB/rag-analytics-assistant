@@ -161,6 +161,7 @@ class InvoiceExtraction:
     issues: list[str] = field(default_factory=list)
     method: str = "rules"
     ocr: bool = False
+    line_items: list[dict[str, Any]] = field(default_factory=list)
 
     def value(self, name: str) -> Any:
         return self.fields[name].value
@@ -269,6 +270,39 @@ def match_known_supplier(fv: FieldValue, known: list[str]) -> FieldValue:
 
 
 # --------------------------------------------------------------------------- rules extractor
+_LINE_HEADER = re.compile(r"\bdescription\b.*\b(amount|total|price)\b", re.I)
+_LINE_STOP = re.compile("|".join(_TOTAL_LABELS + _SUBTOTAL_LABELS + _TAX_LABELS), re.I)
+_LINE_ROW = re.compile(
+    r"^\s*(?P<desc>.*?[A-Za-z].*?)\s+(?P<qty>\d+(?:\.\d+)?)\s+(?:\$?(?P<unit>\d[\d,]*\.\d{2})\s+)?"
+    r"\$?(?P<amt>\d[\d,]*\.\d{2})\s*$"
+)
+
+
+def extract_line_items(lines: list[str]) -> list[dict[str, Any]]:
+    """Rows of the item table: between a 'Description … Amount' header and the first total/tax line."""
+    items: list[dict[str, Any]] = []
+    inside = False
+    for line in lines:
+        if not inside:
+            inside = bool(_LINE_HEADER.search(line))
+            continue
+        if not line.strip():
+            continue
+        if _LINE_STOP.search(line):
+            break
+        m = _LINE_ROW.match(line)
+        if not m:
+            continue
+        desc = re.sub(r"\s{2,}", " ", m.group("desc")).strip(" -|:")
+        items.append({
+            "description": desc,
+            "quantity": float(m.group("qty")),
+            "unit_price": _to_amount(m.group("unit")) if m.group("unit") else None,
+            "amount": _to_amount(m.group("amt")),
+        })
+    return items
+
+
 def extract_rules(text: str, known_suppliers: list[str] | None = None, date_order: str = "MDY") -> InvoiceExtraction:
     ex = InvoiceExtraction()
     f = ex.fields
@@ -333,6 +367,7 @@ def extract_rules(text: str, known_suppliers: list[str] | None = None, date_orde
         f["currency"] = FieldValue("GBP", 0.9, "GBP")
     elif "$" in text:
         f["currency"] = FieldValue("USD", 0.6, "$", "assumed USD from the $ sign")
+    ex.line_items = extract_line_items(lines)
     return ex
 
 
@@ -434,6 +469,17 @@ def validate(ex: InvoiceExtraction, ocr: bool = False, warnings: list[str] | Non
         ex.issues.append(f"Tax not found; subtotal {sub:,.2f} and total {total:,.2f} differ. Check the tax amount.")
     if f["invoice_date"].value and f["due_date"].value and f["due_date"].value < f["invoice_date"].value:
         ex.issues.append("Due date is earlier than the invoice date.")
+    if ex.line_items:
+        for item in ex.line_items:
+            if item["unit_price"] is not None and abs(item["quantity"] * item["unit_price"] - item["amount"]) > 0.011:
+                ex.issues.append(
+                    f"Line '{item['description'][:40]}': {item['quantity']:g} x {item['unit_price']:,.2f} = "
+                    f"{item['quantity'] * item['unit_price']:,.2f}, but the line amount is {item['amount']:,.2f}."
+                )
+        lines_total = round(sum(i["amount"] for i in ex.line_items), 2)
+        target, label = (sub, "subtotal") if sub is not None else ((total, "total") if not tax else (None, ""))
+        if target is not None and abs(lines_total - target) > 0.011:
+            ex.issues.append(f"Line items add up to {lines_total:,.2f}, but the {label} is {target:,.2f}.")
     if ocr:
         ex.issues.append("Read from a scanned image with OCR. Check the figures against the original.")
         for fv in f.values():

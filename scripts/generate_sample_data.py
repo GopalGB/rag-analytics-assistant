@@ -620,7 +620,7 @@ def qbo_fixture() -> dict:
         bill("103", "Coastal Plumbing & Heating Ltd", "5530", "2026-05-18", "2026-06-17", 2130.00, 2130.00),
         bill("104", "Pioneer Concrete Works", "PCW-0192", "2026-06-02", "2026-07-02", 12990.00, 12990.00),
         bill("105", "Allied Fuel Cards", "AFC-3302", "2026-05-20", "2026-06-19", 940.00, 0),
-        bill("106", "Harbor Waste Services", None, "2026-05-28", "2026-06-27", 415.00, 415.00),
+        bill("106", "Harbor Waste Services", None, "2026-05-28", "2026-06-27", 415.00, 0),  # "paid", no bank line
         bill("107", "Northgate Security Systems", "NSS/2026/044", "2026-06-21", "2026-07-21", 3105.75, 3105.75),
         bill("108", "Lakeside Catering", "LC-3390", "2026-06-30", "2026-07-14", 1187.60, 1187.60),
     ]
@@ -687,6 +687,8 @@ def truth(spec: dict, split: str) -> dict:
         "subtotal": sub,
         "tax": tax,
         "total": total,
+        "lines": [{"description": d, "quantity": q, "unit_price": None if spec["layout"] in ("scanned", "photo") else p,
+                   "amount": round(q * p, 2)} for d, q, p in spec["lines"]],
     }
 
 

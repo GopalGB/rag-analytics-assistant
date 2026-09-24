@@ -108,6 +108,13 @@ class RouteDecision(BaseModel):
     reason: str = Field(default="", max_length=300)
 
 
+class RerankResult(BaseModel):
+    """Passage indices, most relevant first."""
+
+    model_config = ConfigDict(extra="ignore")
+    order: list[int] = Field(max_length=50)
+
+
 class InvoiceFields(BaseModel):
     """Header fields printed on a supplier invoice. Use null for anything not printed."""
 

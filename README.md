@@ -9,8 +9,10 @@ read-only workflow**, and flags anything missing, inconsistent or uncertain inst
 > contracts, invoices, bank lines and QuickBooks sandbox company). No real company data, passwords or
 > credentials are needed to run it.
 
-| Ask: cited answers, "not found" when it isn't there | Invoices: extracted fields, confidence, flags |
+| Overview: KPIs, aging, spend, cash flow, budget charts | Reports: draft reports with sources and discrepancies |
 |---|---|
+| ![Overview dashboard](docs/images/overview.png) | ![Reports screen](docs/images/reports.png) |
+| **Ask: cited answers, "not found" when it isn't there** | **Invoices: extracted fields, confidence, flags** |
 | ![Ask screen](docs/images/ask.png) | ![Invoice review screen](docs/images/invoices.png) |
 | **QuickBooks: read-only sync + reconciliation** | **Privacy: what runs where** |
 | ![QuickBooks screen](docs/images/quickbooks.png) | ![Privacy screen](docs/images/privacy.png) |
@@ -31,12 +33,16 @@ OpenAI-compatible server. On the Mac Studio the recommended model is Qwen 2.5 14
 | Useful results on documents it has not processed before | `data/unseen_invoices/` holds invoices in new layouts (incl. a phone-photo PNG). Upload them live: they're read, extracted and reconciled on the spot. | Documents → upload |
 | External actions need explicit approval | The assistant can only *propose* an email or a QuickBooks entry. A named person approves or rejects it; in this prototype approved actions are logged but not executed. | **Approvals** tab |
 | Use any AI provider, safely | Add any API key (Claude, OpenAI, Gemini, OpenRouter, Azure, Groq, Mistral, DeepSeek, Together, xAI, Bedrock) and/or local Ollama. A **task router** picks the pipeline per request, a **model router** handles fast/strong tiers, fallback, circuit breaking, tokens and cost, and a **privacy router** keeps accounting, invoice, bank and high-risk personal data on local models and masks PII sent to the cloud. Model outputs and tool calls are **type-checked** (Pydantic). | **AI models** tab, answer trace, [docs/LLM-ROUTING.md](docs/LLM-ROUTING.md) |
+| Graphs, reports and accounting checks | **Overview** dashboard: KPIs, payables/receivables aging, spend by supplier, cash flow and budget vs. actual, drawn as accessible SVG charts (table view included). Bank lines are matched to QuickBooks bills and receipts, invoice line items are checked against subtotals, and draft reports (accounts summary, aging, outstanding items, project status) are built from the data with each figure's source, flagging where a document and a spreadsheet disagree. | **Overview**, **Reports** tabs |
+| Answers that feel fast, search that understands wording | Answers **stream** word by word (SSE) with live status (route, model, tools used). Search mixes keywords with **semantic embeddings** (local `nomic-embed-text` via Ollama, cached on disk), removes near-duplicate passages (MMR) and can be re-ranked by a local model. | **Ask** tab |
 | Activity logs, access control, revocation, local processing | Tamper-evident (hash-chained) activity log; binds to 127.0.0.1 with optional API key; QuickBooks disconnect revokes tokens and deletes the local copy; a live page states what runs where and what leaves the machine. | **Activity log**, **Privacy & security** tabs |
+| Ready to run as a service | Strict Content-Security-Policy, request IDs carried into every log line and activity entry, JSON logs, Prometheus `/metrics`, `/ready` health check, startup config warnings, checksummed backup/restore, and a hardened Docker image (read-only, non-root). | [docs/OPERATIONS.md](docs/OPERATIONS.md) |
 
 Measured results on the synthetic set (from `make evaluate`, see [docs/TEST-RESULTS.md](docs/TEST-RESULTS.md)):
 11/11 invoices extracted with every field correct (including 3 unseen layouts, a scan and a photo),
 5/5 planted problems flagged, 10/10 search questions return the right document first, 3/3 unanswerable
-questions answered "not found", 8/8 invoices reconciled correctly against QuickBooks.
+questions answered "not found", 8/8 invoices reconciled correctly against QuickBooks, 8/8 bank lines
+classified correctly, 11/11 invoices with correct line items, 7/8 reworded questions found by semantic search.
 
 ## Using your own API key
 
@@ -65,11 +71,15 @@ local AI model (≈10 minutes; nothing leaves the machine):
 brew install tesseract ollama
 ollama serve &                   # or open the Ollama app
 ollama pull qwen2.5:14b          # ~9 GB; runs on Apple Silicon GPU
+ollama pull nomic-embed-text     # ~270 MB; semantic search (picked up automatically)
 make run
 ```
 
 Full Mac Studio instructions: [docs/INSTALL-MAC.md](docs/INSTALL-MAC.md). A 10-minute demo script:
-[docs/DEMO-SCRIPT.md](docs/DEMO-SCRIPT.md).
+[docs/DEMO-SCRIPT.md](docs/DEMO-SCRIPT.md). `make demo` starts with a fixed "as of" date so the aging
+figures match the sample data.
+
+Or run it in a container: `make docker-up` (bound to 127.0.0.1:8000; talks to Ollama on the host).
 
 ## What runs locally, and what needs the internet
 
@@ -87,20 +97,23 @@ The **Privacy & security** tab shows this table live, based on the actual config
 
 ## How it works
 
+The full architecture, with diagrams of every flow (request lifecycle, routers, ingestion, invoices,
+accounting, security layers, observability, deployment), is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ```mermaid
 flowchart LR
     F[Files: PDF, scans, Word, images, CSV/XLSX] --> P[Parse + local OCR]
-    P --> I[Search index: BM25 + vectors]
+    P --> I[Search index: BM25 + semantic vectors, MMR]
     P --> X[Invoice extraction + checks]
     F --> T[(DuckDB tables)]
     X --> T
     Q[QuickBooks, read-only] --> T
-    T --> R[Reconciliation + draft report]
+    T --> R[Reconciliation, bank matching, aging, reports, dashboard]
     U[Question] --> G[Guardrails] --> RT[Task / privacy / model routers] --> A[AI model + typed tools]
     A -->|search_docs| I
     A -->|run_sql, read-only| T
     A -->|propose_action| AP[Approval queue]
-    A --> S[Cited answer]
+    A --> S[Cited answer, streamed]
     X --> RV[Human review]
     AP --> H[Named approver]
     RV & H & A & Q --> L[Hash-chained activity log]
@@ -120,17 +133,18 @@ app/
   documents/           PDF/Word/image parsing, local OCR
   invoices/            field extraction, checks, review state
   integrations/        QuickBooks Online client (read-only, OAuth 2.0) + offline sandbox
-  accounting/          QuickBooks → tables, reconciliation, draft summary
+  accounting/          QuickBooks → tables, reconciliation, bank matching, analytics, reports
   llm/                 providers (Claude, OpenAI-compatible family, Azure, Gemini, Bedrock, Ollama, CLI),
                        model/task/privacy routers, typed schemas, structured outputs
-  agent/               typed tools, conversation memory, engine
+  agent/               typed tools, conversation memory, engine, SSE streaming
   rag/ data/           search index, DuckDB store (read-only SQL), ingestion, auto-reindex
   security/            input guardrails, output scrubber, system-prompt armour
-  approvals.py audit.py
-  ui/index.html        the web interface
+  observability.py     request IDs, JSON logs, metrics      approvals.py audit.py
+  ui/                  the web interface (index.html, app.js, dependency-free SVG charts.js)
 data/                  synthetic sample data, unseen invoices, QuickBooks fixture, ground truth
-scripts/               sample-data generator, evaluation
-tests/                 150+ automated tests
+scripts/               sample-data generator, evaluation, backup/restore
+tests/                 180+ automated tests
+Dockerfile, docker-compose.yml
 docs/                  install, operations, QuickBooks, security, dependencies, results, roadmap
 ```
 
@@ -138,6 +152,7 @@ docs/                  install, operations, QuickBooks, security, dependencies, 
 
 | Document | Contents |
 |---|---|
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | How everything works end to end, with diagrams |
 | [LLM-ROUTING.md](docs/LLM-ROUTING.md) | API keys for any provider, model/task/privacy routing, type-safe outputs |
 | [INSTALL-MAC.md](docs/INSTALL-MAC.md) | Installing on a Mac Studio, choosing a model, starting automatically |
 | [DEMO-SCRIPT.md](docs/DEMO-SCRIPT.md) | Step-by-step demo walkthrough |

@@ -52,7 +52,10 @@ def reindex(
     for table in previous - set(loaded):
         engine.store.drop_table(table)
     docs = ingest.load_documents(data_dir, ocr, cache)
-    new_retriever = Retriever(engine.retriever.embeddings).build(ingest.chunk_documents(docs))
+    old = engine.retriever
+    new_retriever = Retriever(old.embeddings, old._fixed_weight, old.mmr_lambda)
+    new_retriever.reranker = old.reranker
+    new_retriever.build(ingest.chunk_documents(docs))
     engine.retriever = new_retriever
     engine.documents = docs
     return {"tables": loaded, "documents": len(docs), "doc_chunks": len(new_retriever.chunks)}

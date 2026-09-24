@@ -5,29 +5,51 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import io
+import json
+import logging
 import re
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    Response,
+    StreamingResponse,
+)
 from pydantic import BaseModel, Field
 
+from app import __version__
+from app.accounting.reports import REPORTS, markdown_to_html
+from app.agent.streaming import stream_answer
 from app.config import Settings
 from app.data import watcher
 from app.integrations.quickbooks import QuickBooksOnline
 from app.middleware import install_security_middleware
+from app.observability import METRICS, RequestContextMiddleware, event, log, request_id_var, setup_logging
 from app.workspace import LLMNotConfiguredError, Workspace  # noqa: F401  (re-exported for callers)
 
 _UI_FILE = Path(__file__).parent / "ui" / "index.html"
+_UI_ASSETS = {"charts.js": "text/javascript", "app.js": "text/javascript"}
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = Settings()
+    setup_logging(settings.log_level, settings.log_format)
+    t0 = time.perf_counter()
     ws = Workspace(settings)
     ws.startup()
+    event("startup_complete", version=__version__, ms=round((time.perf_counter() - t0) * 1000),
+          documents=len(ws.engine.documents), models=[m.name for m in ws.router.models()],
+          embedding=ws.engine.retriever.embeddings.name)
+    for w in ws.config_warnings:
+        event("config_warning", level=logging.WARNING, warning=w)
     app.state.settings = settings
     app.state.ws = ws
     app.state.engine = ws.engine
@@ -49,8 +71,10 @@ async def lifespan(app: FastAPI):
         ws.store.close()
 
 
-app = FastAPI(title="Private AI Assistant", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+app = FastAPI(title="Private AI Assistant", version=__version__, docs_url=None, redoc_url=None, openapi_url=None,
+              lifespan=lifespan)
 install_security_middleware(app, Settings())
+app.add_middleware(RequestContextMiddleware)  # outermost: request ID + access log + metrics for everything
 
 
 def _ws(request: Request) -> Workspace:
@@ -69,9 +93,50 @@ def index() -> FileResponse:
     return FileResponse(_UI_FILE, media_type="text/html")
 
 
+@app.get("/ui/{name}")
+def ui_asset(name: str) -> FileResponse:
+    if name not in _UI_ASSETS:
+        raise HTTPException(status_code=404, detail="not found")
+    return FileResponse(_UI_FILE.parent / name, media_type=_UI_ASSETS[name])
+
+
 @app.get("/favicon.ico")
 def favicon() -> Response:
     return Response(status_code=204)
+
+
+@app.get("/ready")
+def ready(request: Request) -> Response:
+    """Readiness: the database answers and the search index is built. 503 while not ready."""
+    ws = getattr(request.app.state, "ws", None)
+    checks: dict[str, Any] = {}
+    try:
+        ws.store.run_select("SELECT 1 AS ok", max_rows=1)
+        checks["database"] = "ok"
+    except Exception:
+        checks["database"] = "error"
+    checks["index"] = "ok" if ws and ws.last_reindex else "building"
+    checks["ai_model"] = "available" if ws and ws.router.available else "none (extractive mode)"
+    ok = checks["database"] == "ok" and checks["index"] == "ok"
+    return JSONResponse({"ready": ok, "checks": checks}, status_code=200 if ok else 503)
+
+
+@app.get("/metrics")
+def metrics(request: Request) -> Response:
+    """Prometheus text format: HTTP, model calls/tokens/cost, plus live gauges."""
+    ws = _ws(request)
+    if not ws.settings.metrics_enabled:
+        raise HTTPException(status_code=404, detail="not found")
+    gauges = {
+        "assistant_documents": (len(ws.engine.documents), "Documents indexed"),
+        "assistant_search_chunks": (len(ws.engine.retriever.chunks), "Passages in the search index"),
+        "assistant_invoices": (len(ws.invoices.records), "Invoices extracted"),
+        "assistant_invoices_needs_review": (sum(r.status == "needs_review" for r in ws.invoices.records),
+                                            "Invoices awaiting review"),
+        "assistant_approvals_pending": (len(ws.approvals.list("pending")), "Actions waiting for approval"),
+        "assistant_models_available": (len(ws.router.models()), "Configured AI models"),
+    }
+    return PlainTextResponse(METRICS.render(gauges), media_type="text/plain; version=0.0.4")
 
 
 @app.get("/health")
@@ -79,6 +144,8 @@ def health(request: Request) -> dict:
     ws = _ws(request)
     return {
         "status": "ok",
+        "version": __version__,
+        "config_warnings": ws.config_warnings,
         "app_name": ws.settings.app_name,
         **ws.engine.status(),
         "llm_note": ws.llm_note,
@@ -115,6 +182,20 @@ class ChatIn(BaseModel):
 @app.post("/chat")
 def chat(body: ChatIn, request: Request) -> dict:
     return _ws(request).engine.answer(body.session_id, body.question.strip(), actor=_actor(request))
+
+
+@app.post("/chat/stream")
+def chat_stream(body: ChatIn, request: Request) -> StreamingResponse:
+    """Same as /chat, streamed as server-sent events (progress, scrubbed text snapshots, final payload)."""
+    engine = _ws(request).engine
+    events = stream_answer(engine, body.session_id, body.question.strip(), actor=_actor(request))
+
+    def sse():
+        for ev in events:
+            yield f"data: {json.dumps(ev, default=str)}\n\n"
+
+    return StreamingResponse(sse(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.post("/refresh")
@@ -237,7 +318,7 @@ def qbo_disconnect(request: Request) -> dict:
     ws = _ws(request)
     if isinstance(ws.qbo, QuickBooksOnline):
         ws.qbo.revoke()
-    for table in [t for t in ws.store.tables() if t.startswith("qbo_") or t == "invoice_reconciliation"]:
+    for table in [t for t in ws.store.tables() if t.startswith("qbo_") or t in ("invoice_reconciliation", "bank_reconciliation")]:
         ws.store.drop_table(table)
     ws.last_qbo_sync = None
     ws.audit.record("qbo.disconnected", actor=_actor(request), tokens_revoked=isinstance(ws.qbo, QuickBooksOnline))
@@ -288,6 +369,59 @@ def summary_report_md(request: Request) -> PlainTextResponse:
         media_type="text/markdown",
         headers={"Content-Disposition": 'attachment; filename="accounts-summary-draft.md"'},
     )
+
+
+@app.get("/dashboard")
+def dashboard(request: Request) -> dict:
+    """KPIs and chart series (aging, spend, cash flow, reconciliation, budget, extraction confidence, models)."""
+    return _ws(request).dashboard()
+
+
+@app.get("/bank-reconciliation")
+def bank_reconciliation(request: Request) -> dict:
+    ws = _ws(request)
+    if "bank_reconciliation" not in ws.store.tables():
+        return {"rows": []}
+    cols, rows = ws.store.run_select(
+        "SELECT * FROM bank_reconciliation ORDER BY CASE severity WHEN 'issue' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END, "
+        "date", max_rows=5000)
+    return {"rows": [dict(zip(cols, r, strict=False)) for r in rows]}
+
+
+@app.get("/reports")
+def list_reports() -> dict:
+    return {"reports": [{"id": k, "title": v["title"], "description": v["description"]} for k, v in REPORTS.items()]}
+
+
+@app.get("/reports/{report_id}.md")
+def report_markdown(report_id: str, request: Request) -> PlainTextResponse:
+    rep = _report_or_404(request, report_id)
+    return PlainTextResponse(rep["markdown"], media_type="text/markdown",
+                             headers={"Content-Disposition": f'attachment; filename="{report_id}-report-draft.md"'})
+
+
+@app.get("/reports/{report_id}.html")
+def report_html(report_id: str, request: Request) -> Response:
+    rep = _report_or_404(request, report_id)
+    return Response(markdown_to_html(rep["markdown"], rep["title"]), media_type="text/html")
+
+
+@app.get("/reports/{report_id}")
+def report_json(report_id: str, request: Request) -> dict:
+    return _report_or_404(request, report_id)
+
+
+@app.post("/reports/{report_id}/summary")
+def report_summary(report_id: str, request: Request) -> dict:
+    _report_or_404(request, report_id)
+    return _ws(request).report_summary(report_id, actor=_actor(request))
+
+
+def _report_or_404(request: Request, report_id: str) -> dict:
+    try:
+        return _ws(request).report(report_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="unknown report") from exc
 
 
 # --------------------------------------------------------------------------- approvals
@@ -353,6 +487,7 @@ def privacy(request: Request) -> dict:
 
 
 @app.exception_handler(Exception)
-async def _unhandled(_: Request, exc: Exception) -> JSONResponse:
-    # Never leak internals to the client.
-    return JSONResponse({"error": "internal error"}, status_code=500)
+async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
+    # Log the full error server-side (with the request ID); never leak internals to the client.
+    log.error("unhandled_error", exc_info=exc, extra={"fields": {"path": request.url.path}})
+    return JSONResponse({"error": "internal error", "request_id": request_id_var.get()}, status_code=500)

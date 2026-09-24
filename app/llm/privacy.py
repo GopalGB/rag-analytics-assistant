@@ -138,7 +138,7 @@ class PrivacyPolicy:
     @staticmethod
     def classify_table(table: str) -> str:
         t = table.lower()
-        if t.startswith("qbo_") or t in ("invoices", "invoice_reconciliation"):
+        if t.startswith("qbo_") or t in ("invoices", "invoice_lines", "invoice_reconciliation"):
             return "accounting"
         if "bank" in t or "transaction" in t or "statement" in t:
             return "bank"

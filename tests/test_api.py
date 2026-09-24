@@ -215,3 +215,60 @@ def test_router_view_and_routing_trace(client):
     assert body["routing"]["intent"] == "documents"
     assert body["routing"]["model"].startswith("cli:") and body["routing"]["model_local"] is True
     assert body["routing"]["privacy"]["local_only"] is True  # cloud AI not approved in this config
+
+
+def test_ready_metrics_and_request_ids(client):
+    assert client.get("/ready").json()["ready"] is True
+    r = client.get("/health", headers={"X-Request-ID": "trace-test-0001"})
+    assert r.headers["x-request-id"] == "trace-test-0001"
+    assert r.json()["version"]
+    generated = client.get("/health").headers["x-request-id"]
+    assert len(generated) == 16
+    bad = client.get("/health", headers={"X-Request-ID": "no spaces allowed!"}).headers["x-request-id"]
+    assert bad != "no spaces allowed!"
+    m = client.get("/metrics").text
+    assert 'assistant_http_requests_total{method="GET",path="/health",status="200"}' in m
+    assert "assistant_documents " in m and "# TYPE assistant_http_request_seconds histogram" in m
+
+
+def test_csp_and_ui_assets(client):
+    r = client.get("/")
+    assert "script-src 'self'" in r.headers["content-security-policy"]
+    assert "<script>" not in r.text  # no inline scripts
+    assert client.get("/ui/app.js").status_code == 200 and client.get("/ui/charts.js").status_code == 200
+    assert client.get("/ui/../main.py").status_code == 404 and client.get("/ui/other.js").status_code == 404
+    assert "content-security-policy" not in client.get("/files/documents/Office_Lease_Summary.docx").headers
+
+
+def test_dashboard(client):
+    d = client.get("/dashboard").json()
+    ids = {k["id"] for k in d["kpis"]}
+    assert {"review", "ap", "ap_overdue", "ar_overdue", "cash", "discrepancies"} <= ids
+    assert len(d["ap_aging"]) == 5 and d["spend_by_supplier"] and d["cash_flow"]["months"]
+    assert d["bank_reconciliation"] and d["budget"]
+
+
+def test_reports_endpoints(client):
+    ids = [r["id"] for r in client.get("/reports").json()["reports"]]
+    assert ids == ["accounts", "aging", "outstanding", "project"]
+    for rid in ids:
+        assert "(DRAFT)" in client.get(f"/reports/{rid}").json()["markdown"]
+    assert client.get("/reports/project.html").headers["content-type"].startswith("text/html")
+    assert "attachment" in client.get("/reports/aging.md").headers["content-disposition"]
+    assert client.get("/reports/nope").status_code == 404
+    s = client.post("/reports/project/summary").json()
+    assert s["summary"] and s["local_only"] is True  # stub CLI model is local
+
+
+def test_bank_reconciliation_endpoint(client):
+    rows = client.get("/bank-reconciliation").json()["rows"]
+    assert any(r["status"] == "paid_without_bank_evidence" for r in rows)
+
+
+def test_chat_stream_endpoint(client):
+    with client.stream("POST", "/chat/stream", json={"question": "When does the lease expire?", "session_id": "st"}) as r:
+        assert r.headers["content-type"].startswith("text/event-stream")
+        events = [__import__("json").loads(line[5:]) for line in r.iter_lines() if line.startswith("data:")]
+    kinds = [e["type"] for e in events]
+    assert kinds[0] == "status" and "model" in kinds and kinds[-1] == "done"
+    assert "30 June 2029" in events[-1]["payload"]["text"]

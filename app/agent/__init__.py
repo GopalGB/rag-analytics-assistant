@@ -1,5 +1,1 @@
-"""LLM-first agent: a live model runs the tool-calling loop (run_sql + search_docs)."""
-
-from app.agent.engine import AgentEngine
-
-__all__ = ["AgentEngine"]
+"""Answering engine: typed tools, conversation memory, streaming, and the guarded model tool-loop."""

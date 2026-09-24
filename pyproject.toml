@@ -1,6 +1,6 @@
 [project]
 name = "private-ai-assistant"
-version = "0.2.0"
+version = "0.3.0"
 description = "Local-first private AI assistant prototype: document Q&A with sources, invoice extraction, read-only QuickBooks reconciliation, approvals and audit log."
 readme = "README.md"
 requires-python = ">=3.10"

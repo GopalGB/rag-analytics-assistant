@@ -1,8 +1,16 @@
-# Demo script (about 10 minutes)
+# Demo script (about 12 minutes)
 
 Start from a clean state: `make demo` (clears previous reviews, approvals, log and uploads, then starts
 the server). Open <http://127.0.0.1:8000> and type a name in **You** (top right) — reviews and approvals
 are recorded against it.
+
+## 0. The overview (1 min)
+
+**Overview** tab (opens first): money owed and owing, cash, overdue items, then charts: payables and
+receivables by age, spend by supplier, cash flow from the bank statement, and budget vs. actual with the
+car park resurfacing line over budget. Hover or tab onto a bar for its value; **Table** shows the same
+numbers as text. Below, the bank statement is matched line by line to QuickBooks: Harbor Waste's bill
+is marked *paid* in QuickBooks, but no payment appears on the statement.
 
 ## 1. Privacy first (1 min)
 
@@ -22,6 +30,9 @@ leaves the machine. With the defaults the answer is "nothing". Cloud AI is block
 - With a local model running, also try: *Which customers have overdue balances?* (queries the
   QuickBooks tables) and *Draft an email to Oakridge Accounting Partners about their overdue
   invoices* (the draft appears in **Approvals** and is not sent).
+
+With a model, answers stream in word by word and show which route, model and tools were used; a
+question like *Show spend by supplier* also gets a chart.
 
 Without an AI model the assistant quotes the most relevant passages (labelled "Quoted from sources ·
 no AI") instead of writing an answer.
@@ -58,7 +69,13 @@ extracted within seconds.
 - **no document**: bills in QuickBooks with no supporting invoice on file.
 - **matched**: the uploaded Northgate and Lakeside invoices now match their bills.
 
-The draft accounts summary lists items needing attention and overdue receivables.
+## 5b. Draft reports (1 min)
+
+**Reports** tab: accounts summary, aging, outstanding items and project status, built from the data with
+sources. The project report quotes the status PDF and flags that it states $118,650.00 spent while the
+budget spreadsheet totals $88,590.00: two documents that disagree, surfaced rather than smoothed over.
+Download as Markdown, open the printable page, or click **AI summary** (runs on the local model only,
+because it contains accounting data).
 
 ## 6. Approvals and the audit trail (1 min)
 

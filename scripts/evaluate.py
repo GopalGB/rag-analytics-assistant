@@ -28,6 +28,7 @@ sys.path.insert(0, str(ROOT))
 from app.accounting import qbo_sync, reconcile  # noqa: E402
 from app.agent.engine import AgentEngine  # noqa: E402
 from app.agent.memory import ConversationMemory  # noqa: E402
+from app.config import Settings  # noqa: E402
 from app.data import ingest  # noqa: E402
 from app.data.store import DataStore  # noqa: E402
 from app.documents.ocr import OCREngine  # noqa: E402
@@ -35,7 +36,7 @@ from app.documents.parsers import parse_file  # noqa: E402
 from app.integrations.quickbooks import MockQuickBooks  # noqa: E402
 from app.invoices.extract import extract_invoice  # noqa: E402
 from app.invoices.registry import InvoiceRegistry  # noqa: E402
-from app.rag.embeddings import EmbeddingService  # noqa: E402
+from app.rag.embeddings import build_embeddings  # noqa: E402
 from app.rag.retriever import Retriever  # noqa: E402
 from app.security import InputGuard  # noqa: E402
 
@@ -53,6 +54,17 @@ SEARCH_CASES = [
     ("Who must approve invoices over $5,000?", "Expense_and_Invoice_Approval_Policy.md"),
     ("How should changes to supplier bank details be verified?", "Expense_and_Invoice_Approval_Policy.md"),
 ]
+# Paraphrases share few or no keywords with the source: this is where semantic embeddings matter.
+PARAPHRASE_CASES = [
+    ("When can we get out of the electrical supplier deal?", "Supplier_Agreement_Summit_Ridge_Electrical.pdf"),
+    ("How much are we paying each month for the office space?", "Office_Lease_Summary.docx"),
+    ("What happens if the landlord and tenant disagree about repairs?", "Office_Lease_Summary.docx"),
+    ("Who signs off on big purchases?", "Expense_and_Invoice_Approval_Policy.md"),
+    ("Is the refurbishment going over budget?", "Project_Status_Riverside_Renovation.pdf"),
+    ("How quickly must the plumber respond to an emergency?", "Maintenance_Agreement_Coastal_Plumbing.pdf"),
+    ("What protects us if a supplier's goods are faulty?", "Supplier_Agreement_Summit_Ridge_Electrical.pdf"),
+    ("What happens when the tenancy ends?", "Office_Lease_Summary.docx"),
+]
 NOT_FOUND_CASES = ["Who is our auditor?", "What is the company's VAT registration number?", "When is the staff party?"]
 EXPECTED_RECON = {
     "summit_INV-10421.pdf": "matched",
@@ -64,6 +76,16 @@ EXPECTED_RECON = {
     "brightspark_BSC-118.pdf": "not_in_quickbooks",
     "harbor_waste_no_number.pdf": "possible_match",
 }
+EXPECTED_BANK = [
+    ("customer_receipt", "Rent received - Cobalt Dental Clinic"),
+    ("customer_receipt", "Rent received - Juniper Yoga Studio"),
+    ("bill_payment", "Allied Fuel Cards"),
+    ("bill_payment", "Summit Ridge Electrical Supply"),
+    ("no_bill", "Payroll"),
+    ("no_bill", "Utilities - Easton Power & Water"),
+    ("no_bill", "Bank fee"),
+    ("paid_without_bank_evidence", "Harbor Waste Services"),
+]
 EXPECTED_FLAGS = {
     "greenleaf_GL-2291.pdf": "ambiguous",
     "harbor_waste_no_number.pdf": "Missing invoice number",
@@ -83,7 +105,6 @@ def main() -> None:
     llm = None
     if with_ai:
         from app.agent.llm import select_llm
-        from app.config import Settings
 
         llm, note = select_llm(Settings())
         print("AI model:", note)
@@ -94,6 +115,7 @@ def main() -> None:
 
     # 1 + 2. extraction ------------------------------------------------------------
     per_split: dict[str, dict[str, list[int]]] = {}
+    lines_ok = 0
     detail_rows = []
     flags_ok = 0
     for t in truth:
@@ -108,13 +130,16 @@ def main() -> None:
                 stats[f][0] += 1
             else:
                 wrong.append(f"{f}: got {got!r}, expected {t[f]!r}")
+        got_lines = [(i["description"], i["quantity"], i["unit_price"], i["amount"]) for i in ex.line_items]
+        lines_ok += got_lines == [(i["description"], i["quantity"], i["unit_price"], i["amount"]) for i in t["lines"]]
         detail_rows.append((t["split"], t["file"], "yes" if doc.used_ocr else "", "all correct" if not wrong else "; ".join(wrong),
                             ex.confidence, " / ".join(ex.issues) or "-"))
 
     # 3 + 4. search --------------------------------------------------------------
     tmp = Path(tempfile.mkdtemp())
     docs = ingest.load_documents(str(ROOT / "data" / "sample"), ocr)
-    retriever = Retriever(EmbeddingService("local", 256)).build(ingest.chunk_documents(docs))
+    embeddings, _ = build_embeddings(Settings())
+    retriever = Retriever(embeddings).build(ingest.chunk_documents(docs))
     store = DataStore(str(tmp / "eval.duckdb"))
     engine = AgentEngine(store, retriever, InputGuard(), None, ConversationMemory())
     top1 = top3 = 0
@@ -125,6 +150,13 @@ def main() -> None:
         top1 += bool(names and names[0] == expected)
         top3 += expected in names
         search_rows.append((q, expected, names[0] if names else "-", "yes" if names and names[0] == expected else "no"))
+    para_rows = []
+    para_ok = 0
+    for q, expected in PARAPHRASE_CASES:
+        hits = retriever.search(q, k=1)
+        got = hits[0].file.rsplit("/", 1)[-1] if hits else "-"
+        para_ok += got == expected
+        para_rows.append((q, expected, got, "yes" if got == expected else "no"))
     answered = 0
     for q, expected in SEARCH_CASES:
         ans = engine.answer("eval", q)
@@ -138,6 +170,7 @@ def main() -> None:
         nf_rows.append((q, "says not found" if ok else "returned passages"))
 
     # 5. reconciliation -------------------------------------------------------------
+    ingest.load_tables(store, str(ROOT / "data" / "sample"))  # bank statement + budget spreadsheets
     qbo_sync.sync(MockQuickBooks(ROOT / "data" / "qbo_sandbox" / "sandbox_company.json"), store)
     reg = InvoiceRegistry(None)
     records = reg.build([d for d in docs if d.file.startswith("invoices/")])
@@ -148,6 +181,11 @@ def main() -> None:
     got_status = {r["file"].rsplit("/", 1)[-1]: r["status"] for r in rows if r["file"]}
     recon_ok = sum(got_status.get(f) == s for f, s in EXPECTED_RECON.items())
     orphan = sorted(r["invoice_number"] for r in rows if r["status"] == "no_document")
+    from app.accounting import bank as bank_mod
+
+    bank_rows = bank_mod.reconcile_bank(store)
+    bank_got = {(r["status"], r["description"] or r["counterparty"]) for r in bank_rows}
+    bank_ok = sum(1 for e in EXPECTED_BANK if e in bank_got)
     store.close()
     shutil.rmtree(tmp, ignore_errors=True)
 
@@ -172,6 +210,9 @@ def main() -> None:
             cells.append(f"{ok}/{n} ({ok / n:.0%})" if n else "-")
         out(f"| {f} | {cells[0]} | {cells[1]} |")
     out("")
+    out(f"**Line items:** {lines_ok}/{len(truth)} invoices had every line (description, quantity, unit price, amount) "
+        "extracted exactly, including the scanned PDF and the photo.")
+    out("")
     out("A field counts as correct only if it exactly matches the ground truth, including `null` where the document does "
         "not print the value (e.g. the invoice with no invoice number).")
     out("")
@@ -187,11 +228,22 @@ def main() -> None:
     out("")
     out("## 3. Document search (right source first)")
     out("")
-    out(f"Top-1: **{top1}/{len(SEARCH_CASES)}**, top-3: **{top3}/{len(SEARCH_CASES)}** (offline hashing embeddings + BM25).")
+    out(f"Top-1: **{top1}/{len(SEARCH_CASES)}**, top-3: **{top3}/{len(SEARCH_CASES)}** (BM25 + {retriever.embeddings.name} embeddings, MMR diversity).")
     out("")
     out("| Question | Expected source | Top result | Top-1 |")
     out("|---|---|---|---|")
     for r in search_rows:
+        out(f"| {r[0]} | {r[1]} | {r[2]} | {r[3]} |")
+    out("")
+    out("### Paraphrased questions")
+    out("")
+    out(f"Top-1: **{para_ok}/{len(PARAPHRASE_CASES)}** with {retriever.embeddings.name}. These questions share few "
+        "words with the source, so they measure semantic understanding. For reference, a measured run with offline "
+        "hashing embeddings scored 4/8 and with `nomic-embed-text` scored 7/8.")
+    out("")
+    out("| Question | Expected source | Top result | Top-1 |")
+    out("|---|---|---|---|")
+    for r in para_rows:
         out(f"| {r[0]} | {r[1]} | {r[2]} | {r[3]} |")
     out("")
     out("## 4. Questions the documents can't answer")
@@ -214,9 +266,14 @@ def main() -> None:
     for f, s in EXPECTED_RECON.items():
         out(f"| {f} | {s} | {got_status.get(f, '-')} |")
     out("")
+    out("## 6. Bank statement vs QuickBooks")
+    out("")
+    out(f"**{bank_ok}/{len(EXPECTED_BANK)}** expected outcomes found: supplier payments and customer receipts matched, "
+        "payroll/utilities/fees flagged as having no bill, and a bill marked paid in QuickBooks with no bank payment.")
+    out("")
     out("## Automated test suite")
     out("")
-    out("`pytest` runs 100+ unit and end-to-end tests (parsing, OCR, extraction, grounding of AI values, QuickBooks read-only "
+    out("`pytest` runs 180+ unit and end-to-end tests (parsing, OCR, extraction, grounding of AI values, QuickBooks read-only "
         "enforcement and OAuth token handling, reconciliation, approvals, tamper-evident log, API, guardrails). CI runs them "
         "on every push.")
     out("")

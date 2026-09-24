@@ -10,10 +10,12 @@ production deployment.
 | Qwen 2.5 14B Instruct (`qwen2.5:14b`, default) | ~9 GB | Apache 2.0 | Yes | Answers, tool use, invoice assist |
 | Qwen 2.5 32B Instruct (`qwen2.5:32b`) | ~20 GB | Apache 2.0 | Yes | Higher quality on 64 GB+ Macs |
 | Llama 3.3 70B Instruct (`llama3.3:70b`) | ~43 GB | Llama 3.3 Community Licence | Yes, with conditions (attribution, acceptable-use policy) | Highest quality on 128 GB Macs |
+| nomic-embed-text v1.5 (`nomic-embed-text`) | ~270 MB | Apache 2.0 | Yes | Semantic search embeddings |
 | Qwen 2.5 3B Instruct (tested here on CPU only) | ~2 GB | Qwen Research Licence | **No**: non-commercial | Not recommended |
 
-No model is trained or fine-tuned; existing models are used as-is. The search index uses a built-in,
-offline hashing embedder (no model download). A semantic embedding model can be added later.
+No model is trained or fine-tuned; existing models are used as-is. Search uses `nomic-embed-text`
+when Ollama has it, and otherwise a built-in offline hashing embedder (no download). Embeddings are
+cached on disk, so unchanged documents are never embedded twice.
 
 ## Software
 

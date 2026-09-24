@@ -17,6 +17,12 @@ from typing import Any
 GENESIS = "0" * 64
 
 
+def _request_id() -> str:
+    from app.observability import request_id_var
+
+    return request_id_var.get()
+
+
 def _digest(entry: dict[str, Any]) -> str:
     body = {k: v for k, v in entry.items() if k != "hash"}
     return hashlib.sha256(json.dumps(body, sort_keys=True, default=str).encode("utf-8")).hexdigest()
@@ -44,6 +50,9 @@ class AuditLog:
                 "details": details,
                 "prev": self._last,
             }
+            rid = _request_id()
+            if rid != "-":
+                entry["request_id"] = rid
             entry["hash"] = _digest(entry)
             if self.path:
                 with self.path.open("a", encoding="utf-8") as fh:

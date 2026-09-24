@@ -4,6 +4,9 @@ Every provider implements:
 - `converse(system, history, question, toolbox, max_iters) -> str`: run the full tool-calling
   conversation in the provider's own native format. The tool list comes from the ToolBox (so the task
   router can restrict tools per request) and every call is executed — and validated — by the ToolBox.
+  With `stream=sink`, providers that support it stream the answer: `sink("text", delta)` for each
+  chunk and `sink("reset", None)` when a turn turns out to be a tool-calling turn (its preamble is
+  discarded). Providers without streaming just emit the full text once at the end.
 - `complete(system, prompt) -> str`: one tool-free completion.
 - `complete_json(system, prompt, schema, name) -> str`: a completion constrained to a JSON Schema using
   the provider's strongest mechanism (OpenAI `json_schema`, JSON mode, or Anthropic tool forcing).
@@ -57,13 +60,37 @@ class BaseLLM(Protocol):
 def is_local_url(url: str) -> bool:
     """True for this machine or a private/LAN address (an on-premises model server)."""
     host = (urlparse(url).hostname or "").lower()
-    if host in {"localhost", "0.0.0.0"} or host.endswith(".local"):
+    # host.docker.internal = the Mac itself when the app runs in a container (e.g. Ollama on the host)
+    if host in {"localhost", "0.0.0.0", "host.docker.internal"} or host.endswith(".local"):
         return True
     try:
         ip = ipaddress.ip_address(host)
     except ValueError:
         return False
     return ip.is_loopback or ip.is_private
+
+
+def _sse_data(resp: Any):
+    """Yield parsed JSON payloads from a server-sent-events response (`data: {...}` lines)."""
+    for raw in resp.iter_lines(decode_unicode=True):
+        if not raw:
+            continue
+        line = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+        if not line.startswith("data:"):
+            continue
+        data = line[5:].strip()
+        if data == "[DONE]":
+            return
+        try:
+            yield json.loads(data)
+        except json.JSONDecodeError:
+            continue
+
+
+def _emit_once(sink: Any, text: str) -> str:
+    if sink is not None and text:
+        sink("text", text)
+    return text
 
 
 def _tool_specs(toolbox: Any) -> list[dict[str, Any]]:
@@ -137,12 +164,49 @@ class OpenAICompatLLM:
         usage.add(u.get("prompt_tokens"), u.get("completion_tokens"))
         return data["choices"][0]["message"]
 
-    def converse(self, system, history, question, toolbox, max_iters):
+    def _call_stream(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None, sink: Any) -> dict[str, Any]:
+        """Streaming chat call; returns the assembled message ({content, tool_calls}) like `_call`."""
+        body: dict[str, Any] = {"model": self.model, "messages": messages, "temperature": 0.1, "stream": True,
+                                "stream_options": {"include_usage": True}}
+        if tools:
+            body["tools"] = tools
+        resp = self.http.post(self._url(), headers=self._headers(), json=body, timeout=self.timeout, stream=True)
+        if resp.status_code == 400:  # some servers reject stream_options
+            body.pop("stream_options")
+            resp = self.http.post(self._url(), headers=self._headers(), json=body, timeout=self.timeout, stream=True)
+        if resp.status_code >= 400:
+            raise _http_error(resp, self.provider)
+        content: list[str] = []
+        calls: dict[int, dict[str, Any]] = {}
+        for chunk in _sse_data(resp):
+            u = chunk.get("usage") or {}
+            if u:
+                usage.add(u.get("prompt_tokens"), u.get("completion_tokens"))
+            for choice in chunk.get("choices") or []:
+                delta = choice.get("delta") or {}
+                if delta.get("content"):
+                    content.append(delta["content"])
+                    if not calls:
+                        sink("text", delta["content"])
+                for tc in delta.get("tool_calls") or []:
+                    slot = calls.setdefault(tc.get("index", len(calls)), {"id": "", "type": "function",
+                                                                            "function": {"name": "", "arguments": ""}})
+                    if not slot["id"] and tc.get("id"):
+                        slot["id"] = tc["id"]
+                    fn = tc.get("function") or {}
+                    slot["function"]["name"] += fn.get("name") or ""
+                    slot["function"]["arguments"] += fn.get("arguments") or ""
+        if calls and content:
+            sink("reset", None)  # the streamed preamble belonged to a tool-calling turn
+        return {"content": "".join(content), "tool_calls": [calls[i] for i in sorted(calls)]}
+
+    def converse(self, system, history, question, toolbox, max_iters, stream=None):
         messages: list[dict[str, Any]] = [{"role": "system", "content": system}, *history,
                                           {"role": "user", "content": question}]
         tools = _tool_specs(toolbox)
+        call = (lambda m, t: self._call_stream(m, t, stream)) if stream else self._call
         for _ in range(max_iters):
-            msg = self._call(messages, tools)
+            msg = call(messages, tools)
             tool_calls = msg.get("tool_calls") or []
             if not tool_calls:
                 return msg.get("content") or ""
@@ -155,7 +219,7 @@ class OpenAICompatLLM:
                     args = {"__invalid_json__": fn.get("arguments")}
                 result = toolbox.run(fn.get("name", ""), args)
                 messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "content": json.dumps(result, default=str)[:8000]})
-        final = self._call(messages + [{"role": "user", "content": "Give your best final answer now."}])
+        final = call(messages + [{"role": "user", "content": "Give your best final answer now."}], None)
         return final.get("content") or ""
 
     def complete(self, system: str, prompt: str) -> str:
@@ -270,12 +334,61 @@ class AnthropicLLM:
     def _text(content: list[dict[str, Any]]) -> str:
         return "".join(b.get("text", "") for b in content if b.get("type") == "text").strip()
 
-    def converse(self, system, history, question, toolbox, max_iters):
+    def _post_stream(self, body: dict[str, Any], sink: Any) -> dict[str, Any]:
+        """Streaming Messages call; returns {"content": [...blocks]} like `_post`."""
+        resp = self.http.post(
+            f"{self.base_url}/v1/messages",
+            headers={"x-api-key": self.api_key, "anthropic-version": self.API_VERSION, "content-type": "application/json"},
+            json={"model": self.model, "max_tokens": self.max_tokens, "stream": True, **body},
+            timeout=self.timeout,
+            stream=True,
+        )
+        if resp.status_code >= 400:
+            raise _http_error(resp, self.provider)
+        blocks: dict[int, dict[str, Any]] = {}
+        partial: dict[int, list[str]] = {}
+        saw_tool = False
+        for ev in _sse_data(resp):
+            kind = ev.get("type")
+            if kind == "message_start":
+                u = (ev.get("message") or {}).get("usage") or {}
+                usage.add(u.get("input_tokens"), u.get("output_tokens"))
+            elif kind == "content_block_start":
+                block = dict(ev.get("content_block") or {})
+                if block.get("type") == "tool_use":
+                    saw_tool = True
+                    block["input"] = {}
+                blocks[ev.get("index", len(blocks))] = block
+            elif kind == "content_block_delta":
+                i, d = ev.get("index", 0), ev.get("delta") or {}
+                if d.get("type") == "text_delta":
+                    blocks.setdefault(i, {"type": "text", "text": ""})
+                    blocks[i]["text"] = blocks[i].get("text", "") + d.get("text", "")
+                    if not saw_tool:
+                        sink("text", d.get("text", ""))
+                elif d.get("type") == "input_json_delta":
+                    partial.setdefault(i, []).append(d.get("partial_json", ""))
+            elif kind == "message_delta":
+                u = ev.get("usage") or {}
+                usage.add(None, u.get("output_tokens"))
+            elif kind == "error":
+                raise LLMError(f"anthropic: stream error {ev.get('error')}")
+        for i, parts in partial.items():
+            try:
+                blocks[i]["input"] = json.loads("".join(parts) or "{}")
+            except json.JSONDecodeError:
+                blocks[i]["input"] = {"__invalid_json__": "".join(parts)}
+        if saw_tool and any(b.get("type") == "text" and b.get("text") for b in blocks.values()):
+            sink("reset", None)
+        return {"content": [blocks[i] for i in sorted(blocks)]}
+
+    def converse(self, system, history, question, toolbox, max_iters, stream=None):
         messages: list[dict[str, Any]] = [{"role": m["role"], "content": m["content"]} for m in history]
         messages.append({"role": "user", "content": question})
         tools = self._tools(toolbox)
+        post = (lambda b: self._post_stream(b, stream)) if stream else self._post
         for _ in range(max_iters):
-            data = self._post({"system": system, "messages": messages, **({"tools": tools} if tools else {})})
+            data = post({"system": system, "messages": messages, **({"tools": tools} if tools else {})})
             content = data.get("content", [])
             uses = [b for b in content if b.get("type") == "tool_use"]
             if not uses:
@@ -287,7 +400,7 @@ class AnthropicLLM:
                 for b in uses
             ]})
         messages.append({"role": "user", "content": "Give your best final answer now, without calling tools."})
-        return self._text(self._post({"system": system, "messages": messages}).get("content", []))
+        return self._text(post({"system": system, "messages": messages}).get("content", []))
 
     def complete(self, system: str, prompt: str) -> str:
         return self._text(self._post({"system": system, "messages": [{"role": "user", "content": prompt}]}).get("content", []))
@@ -341,7 +454,10 @@ class BedrockLLM:
         usage.add(u.get("inputTokens"), u.get("outputTokens"))
         return resp
 
-    def converse(self, system, history, question, toolbox, max_iters):
+    def converse(self, system, history, question, toolbox, max_iters, stream=None):
+        return _emit_once(stream, self._converse_all(system, history, question, toolbox, max_iters))
+
+    def _converse_all(self, system, history, question, toolbox, max_iters):
         messages: list[dict[str, Any]] = [{"role": m["role"], "content": [{"text": m["content"]}]} for m in history]
         messages.append({"role": "user", "content": [{"text": question}]})
         system_blocks = [{"text": system}]
@@ -412,7 +528,10 @@ class CommandLLM:
         parts += [f"[USER]\n{question}", "[ASSISTANT]"]
         return "\n\n".join(parts)
 
-    def converse(self, system, history, question, toolbox, max_iters):
+    def converse(self, system, history, question, toolbox, max_iters, stream=None):
+        return _emit_once(stream, self._converse_all(system, history, question, toolbox, max_iters))
+
+    def _converse_all(self, system, history, question, toolbox, max_iters):
         specs = _tool_specs(toolbox)
         if specs:
             system = system + "\n\n" + _tool_protocol_instructions(toolbox)

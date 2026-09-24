@@ -17,6 +17,7 @@ fails, the engine does NOT make up an answer: it returns the most relevant passa
 from __future__ import annotations
 
 import html
+import inspect
 import math
 import re
 from collections.abc import Callable
@@ -105,7 +106,9 @@ class AgentEngine:
         }
 
     # ---- entry point -------------------------------------------------------------
-    def answer(self, session_id: str, question: str, actor: str = "local-user") -> dict[str, Any]:
+    def answer(self, session_id: str, question: str, actor: str = "local-user", sink: Any = None) -> dict[str, Any]:
+        """Answer one question. `sink(kind, data)` (optional) receives live progress for streaming."""
+        emit = sink or (lambda *_a, **_k: None)
         decision = self.guard.inspect(question)
         if decision.category == "greeting":
             return {"text": decision.user_message, "route": "greeting", "sql": None, "sources": []}
@@ -119,7 +122,8 @@ class AgentEngine:
             payload = self._extractive(question, reason="No AI model is connected")
         else:
             try:
-                payload = self._agentic(session_id, question)
+                emit("status", {"stage": "routing"})
+                payload = self._agentic(session_id, question, emit if sink else None)
                 local_only_turn = payload["routing"]["privacy"]["sensitive"]
             except _PrivacyBlocked as pb:
                 classes = ", ".join(sorted(pb.decision.data_classes)) or "this"
@@ -216,20 +220,28 @@ class AgentEngine:
         return {"citations": len(cites), "unverified_citations": unverified}
 
     # ---- agentic (model + tools) ---------------------------------------------------------
-    def _agentic(self, session_id: str, question: str) -> dict[str, Any]:
+    def _agentic(self, session_id: str, question: str, sink: Any = None) -> dict[str, Any]:
+        emit = sink or (lambda *_a, **_k: None)
         plan = self.intents.plan(question, classify=self._classifier(question))
         prefetched = self.retriever.search(question, k=self.prefetch_passages) if (plan.prefetch and self.prefetch_passages) else []
         decision = self.privacy.decide(question, plan.data_classes, prefetched, has_local=self.router.has_local())
+        emit("route", {**plan.to_dict(), "local_only": decision.local_only, "privacy_reasons": decision.reasons})
         if not self.router.candidates(plan.tier, decision.local_only):
             raise _PrivacyBlocked(plan, decision)
 
         guard = PrivacyGuard(self.privacy.policy)
         toolbox = ToolBox(self.store, self.retriever, max_rows=self.max_sql_rows, approvals=self.approvals,
                           allowed_tools=plan.tools, privacy=guard)
+        toolbox.listener = sink
         visible: list = []
+        tries = [0]
 
         def attempt(llm: BaseLLM) -> str:
             nonlocal visible
+            if tries[0]:
+                emit("reset", None)  # a previous model failed part-way; discard its partial text
+            tries[0] += 1
+            emit("model", {"model": llm.name, "local": bool(getattr(llm, "is_local", False)), "attempt": tries[0]})
             guard.cloud = not getattr(llm, "is_local", False)
             guard.withheld = guard.redactions = 0
             system = build_system_prompt(self.store.schema_summary(), self._doc_summary(guard))
@@ -247,8 +259,11 @@ class AgentEngine:
                 )
             history = [{"role": m["role"], "content": guard.outgoing(m["content"])}
                        for m in self.memory.history(session_id, for_cloud=guard.cloud)]
+            kwargs: dict[str, Any] = {}
+            if sink is not None and "stream" in inspect.signature(llm.converse).parameters:
+                kwargs["stream"] = sink
             text = llm.converse(system=system, history=history, question=guard.outgoing(question), toolbox=toolbox,
-                                max_iters=self.max_tool_iterations)
+                                max_iters=self.max_tool_iterations, **kwargs)
             text = html.unescape(text or "")  # some local servers HTML-escape output
             if not text.strip():
                 raise LLMError("empty model response")

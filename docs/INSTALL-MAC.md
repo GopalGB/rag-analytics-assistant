@@ -37,6 +37,7 @@ Start Ollama (open the Ollama app, or run `ollama serve`), then pull one model:
 
 ```bash
 ollama pull qwen2.5:14b
+ollama pull nomic-embed-text     # small embedding model for semantic search (~270 MB)
 ```
 
 Use a model with **native tool calling** (Qwen 2.5, Llama 3.1+). Very small models (≤3B) can answer

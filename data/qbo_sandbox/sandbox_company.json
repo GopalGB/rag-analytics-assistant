@@ -195,7 +195,7 @@
       "TxnDate": "2026-05-28",
       "DueDate": "2026-06-27",
       "TotalAmt": 415.0,
-      "Balance": 415.0,
+      "Balance": 0,
       "CurrencyRef": {
         "value": "USD",
         "name": "United States Dollar"

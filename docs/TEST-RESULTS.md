@@ -16,6 +16,8 @@ All data is synthetic. "Unseen" invoices use layouts, labels and formats (a remi
 | tax | 8/8 (100%) | 3/3 (100%) |
 | total | 8/8 (100%) | 3/3 (100%) |
 
+**Line items:** 11/11 invoices had every line (description, quantity, unit price, amount) extracted exactly, including the scanned PDF and the photo.
+
 A field counts as correct only if it exactly matches the ground truth, including `null` where the document does not print the value (e.g. the invoice with no invoice number).
 
 | Split | File | OCR | Result | Confidence | Flags raised |
@@ -38,7 +40,7 @@ A field counts as correct only if it exactly matches the ground truth, including
 
 ## 3. Document search (right source first)
 
-Top-1: **10/10**, top-3: **10/10** (offline hashing embeddings + BM25).
+Top-1: **10/10**, top-3: **10/10** (BM25 + openai:nomic-embed-text embeddings, MMR diversity).
 
 | Question | Expected source | Top result | Top-1 |
 |---|---|---|---|
@@ -52,6 +54,21 @@ Top-1: **10/10**, top-3: **10/10** (offline hashing embeddings + BM25).
 | What is the forecast at completion for the Riverside project? | Project_Status_Riverside_Renovation.pdf | Project_Status_Riverside_Renovation.pdf | yes |
 | Who must approve invoices over $5,000? | Expense_and_Invoice_Approval_Policy.md | Expense_and_Invoice_Approval_Policy.md | yes |
 | How should changes to supplier bank details be verified? | Expense_and_Invoice_Approval_Policy.md | Expense_and_Invoice_Approval_Policy.md | yes |
+
+### Paraphrased questions
+
+Top-1: **7/8** with openai:nomic-embed-text. These questions share few words with the source, so they measure semantic understanding. For reference, a measured run with offline hashing embeddings scored 4/8 and with `nomic-embed-text` scored 7/8.
+
+| Question | Expected source | Top result | Top-1 |
+|---|---|---|---|
+| When can we get out of the electrical supplier deal? | Supplier_Agreement_Summit_Ridge_Electrical.pdf | Supplier_Agreement_Summit_Ridge_Electrical.pdf | yes |
+| How much are we paying each month for the office space? | Office_Lease_Summary.docx | Office_Lease_Summary.docx | yes |
+| What happens if the landlord and tenant disagree about repairs? | Office_Lease_Summary.docx | Office_Lease_Summary.docx | yes |
+| Who signs off on big purchases? | Expense_and_Invoice_Approval_Policy.md | Supplier_Agreement_Summit_Ridge_Electrical.pdf | no |
+| Is the refurbishment going over budget? | Project_Status_Riverside_Renovation.pdf | Project_Status_Riverside_Renovation.pdf | yes |
+| How quickly must the plumber respond to an emergency? | Maintenance_Agreement_Coastal_Plumbing.pdf | Maintenance_Agreement_Coastal_Plumbing.pdf | yes |
+| What protects us if a supplier's goods are faulty? | Supplier_Agreement_Summit_Ridge_Electrical.pdf | Supplier_Agreement_Summit_Ridge_Electrical.pdf | yes |
+| What happens when the tenancy ends? | Office_Lease_Summary.docx | Office_Lease_Summary.docx | yes |
 
 ## 4. Questions the documents can't answer
 
@@ -76,8 +93,12 @@ Top-1: **10/10**, top-3: **10/10** (offline hashing embeddings + BM25).
 | brightspark_BSC-118.pdf | not_in_quickbooks | not_in_quickbooks |
 | harbor_waste_no_number.pdf | possible_match | possible_match |
 
+## 6. Bank statement vs QuickBooks
+
+**8/8** expected outcomes found: supplier payments and customer receipts matched, payroll/utilities/fees flagged as having no bill, and a bill marked paid in QuickBooks with no bank payment.
+
 ## Automated test suite
 
-`pytest` runs 100+ unit and end-to-end tests (parsing, OCR, extraction, grounding of AI values, QuickBooks read-only enforcement and OAuth token handling, reconciliation, approvals, tamper-evident log, API, guardrails). CI runs them on every push.
+`pytest` runs 180+ unit and end-to-end tests (parsing, OCR, extraction, grounding of AI values, QuickBooks read-only enforcement and OAuth token handling, reconciliation, approvals, tamper-evident log, API, guardrails). CI runs them on every push.
 
 See [ROADMAP.md](ROADMAP.md) for known limitations.

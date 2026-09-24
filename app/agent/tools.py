@@ -54,11 +54,20 @@ class ToolBox:
         self.sources: list[dict[str, Any]] = []
         self.actions: list[dict[str, Any]] = []
         self.calls: list[dict[str, Any]] = []  # tool-call log for the trace
+        self.listener: Any = None  # optional callback(kind, data) for live progress (streaming)
 
     def tool_specs(self) -> list[dict[str, Any]]:
         return [tool_spec(n) for n in self.allowed_tools]
 
     def run(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
+        if self.listener:
+            self.listener("tool", {"tool": name, "state": "start"})
+        result = self._run(name, args)
+        if self.listener:
+            self.listener("tool", {"tool": name, "state": "done", "ok": "error" not in result})
+        return result
+
+    def _run(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
         if name not in TOOL_ARGS:
             return self._log(name, {"error": f"unknown tool: {name}"})
         if name not in self.allowed_tools:

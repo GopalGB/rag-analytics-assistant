@@ -44,3 +44,9 @@ def scrub(text: str) -> str:
         out = pat.sub(_REDACTION, out)
     out = _CODE_FENCE.sub(_REDACTION, out)
     return out.strip()
+
+
+def holdback_chars() -> int:
+    """How many trailing characters a streaming response must hold back so that no partially-typed
+    secret can be forwarded before its full pattern is recognisable and redacted."""
+    return max([40] + [len(x) + 1 for x in _SECRETS])

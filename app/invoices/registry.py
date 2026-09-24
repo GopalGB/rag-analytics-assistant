@@ -53,6 +53,7 @@ class InvoiceRecord:
     review_note: str | None = None
     corrected_fields: list[str] = field(default_factory=list)
     duplicate_of: str | None = None
+    line_items: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -72,6 +73,7 @@ class InvoiceRecord:
             "review_note": self.review_note,
             "corrected_fields": self.corrected_fields,
             "duplicate_of": self.duplicate_of,
+            "line_items": self.line_items,
         }
 
 
@@ -159,6 +161,7 @@ class InvoiceRegistry:
             issues=list(ex.issues),
             method=ex.method,
             ocr=ex.ocr,
+            line_items=[dict(i) for i in ex.line_items],
         )
 
     @staticmethod
@@ -250,6 +253,16 @@ class InvoiceRegistry:
         return clean
 
     # ---- export --------------------------------------------------------
+    def lines_dataframe(self) -> pd.DataFrame:
+        rows = []
+        with self._lock:
+            for r in self.records:
+                for n, item in enumerate(r.line_items, start=1):
+                    rows.append({"invoice_id": r.id, "file": r.file, "supplier": r.values.get("supplier"),
+                                 "invoice_number": r.values.get("invoice_number"), "line": n, **item})
+        return pd.DataFrame(rows, columns=["invoice_id", "file", "supplier", "invoice_number", "line", "description",
+                                           "quantity", "unit_price", "amount"])
+
     def dataframe(self) -> pd.DataFrame:
         cols = ["id", "file", *FIELDS, "confidence", "status", "issue_count", "issues", "extraction_method",
                 "ocr_used", "duplicate_of", "reviewed_by"]
