@@ -131,9 +131,11 @@ class DataStore:
         return _COMMENT_LINE.sub(" ", _COMMENT_BLOCK.sub(" ", sql))
 
     def referenced_tables(self, sql: str) -> set[str]:
-        """Real tables a query reads (CTE names excluded). Raises UnsafeQueryError if unparseable."""
+        """Real tables a query may read. A CTE named like a real table counts as that table (fail closed:
+        `WITH secret AS (SELECT * FROM secret)` reads the real table). Raises UnsafeQueryError if unparseable."""
         referenced, ctes = self._parse_tables(self._strip_comments(sql).strip().rstrip(";"))
-        return {t.lower() for t in referenced if t.lower() not in ctes}
+        real = {t.lower() for t in self.tables()}
+        return {t.lower() for t in referenced if t.lower() not in ctes or t.lower() in real}
 
     def _assert_tables_allowed(self, sql: str) -> None:
         """Parse with DuckDB and require every referenced table to be a known, non-internal table

@@ -86,8 +86,9 @@ extraction results before switching.
 - **QuickBooks**: **QuickBooks → Disconnect & revoke** revokes the token at Intuit and deletes both the
   token and the local QuickBooks copy. You can also remove the app in QuickBooks under
   *Settings → Apps*.
-- **Network access**: remove `APP_API_KEY` / stop binding to `0.0.0.0`; the server then only accepts
-  connections from the Mac itself.
+- **Network access**: first stop the server, or restart it bound to `127.0.0.1` (the default), and only
+  then remove `APP_API_KEY`. Removing the key while the server is still bound to `0.0.0.0` leaves it
+  open to the network without authentication.
 - **Cloud AI**: remove `ALLOW_CLOUD_AI` (default is blocked).
 
 ## Troubleshooting

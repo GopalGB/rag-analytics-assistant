@@ -21,7 +21,7 @@ COPY pyproject.toml ./
 
 # Run as an unprivileged user; data and state live on mounted volumes.
 RUN useradd --create-home --uid 10001 assistant \
- && mkdir -p /data /storage && chown -R assistant /data /storage
+ && mkdir -p /data/uploads /storage && chown -R assistant /data /storage
 USER assistant
 ENV QBO_FIXTURE=/app/data/qbo_sandbox/sandbox_company.json
 

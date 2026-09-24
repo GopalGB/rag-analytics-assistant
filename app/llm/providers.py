@@ -60,8 +60,11 @@ class BaseLLM(Protocol):
 def is_local_url(url: str) -> bool:
     """True for this machine or a private/LAN address (an on-premises model server)."""
     host = (urlparse(url).hostname or "").lower()
-    # host.docker.internal = the Mac itself when the app runs in a container (e.g. Ollama on the host)
+    # host.docker.internal = the Mac itself when the app runs in a container (e.g. Ollama on the host).
+    # A single-label name (e.g. the compose service "ollama") only resolves on the local/container network.
     if host in {"localhost", "0.0.0.0", "host.docker.internal"} or host.endswith(".local"):
+        return True
+    if host and "." not in host and ":" not in host:
         return True
     try:
         ip = ipaddress.ip_address(host)
@@ -399,8 +402,13 @@ class AnthropicLLM:
                  "content": json.dumps(toolbox.run(b["name"], b.get("input") or {}), default=str)[:8000]}
                 for b in uses
             ]})
-        messages.append({"role": "user", "content": "Give your best final answer now, without calling tools."})
-        return self._text(post({"system": system, "messages": messages}).get("content", []))
+        # The history now holds tool_use/tool_result blocks, so the tools must still be defined; tool_choice
+        # "none" stops further calls. The instruction joins the last user turn (no two user turns in a row).
+        messages[-1]["content"].append({"type": "text", "text": "Give your best final answer now, without calling tools."})
+        final: dict[str, Any] = {"system": system, "messages": messages}
+        if tools:
+            final.update(tools=tools, tool_choice={"type": "none"})
+        return self._text(post(final).get("content", []))
 
     def complete(self, system: str, prompt: str) -> str:
         return self._text(self._post({"system": system, "messages": [{"role": "user", "content": prompt}]}).get("content", []))
@@ -476,8 +484,12 @@ class BedrockLLM:
                                 "content": [{"json": json.loads(json.dumps(toolbox.run(tu["name"], tu.get("input", {}) or {}), default=str))}]}}
                 for tu in tool_uses
             ]})
-        messages.append({"role": "user", "content": [{"text": "Give your best final answer now."}]})
-        return self._text(self._converse(system=system_blocks, messages=messages, inferenceConfig={"temperature": 0.1})["output"]["message"])
+        # Converse rejects toolUse/toolResult history without a toolConfig, and two user turns in a row.
+        messages[-1]["content"].append({"text": "Give your best final answer now, without calling tools."})
+        kw = {"system": system_blocks, "messages": messages, "inferenceConfig": {"temperature": 0.1}}
+        if tool_config["tools"]:
+            kw["toolConfig"] = tool_config
+        return self._text(self._converse(**kw)["output"]["message"])
 
     def complete(self, system: str, prompt: str) -> str:
         resp = self._converse(system=[{"text": system}], messages=[{"role": "user", "content": [{"text": prompt}]}],

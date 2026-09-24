@@ -23,6 +23,7 @@ from typing import Any
 
 import pandas as pd
 
+from app.data.ingest import RESERVED_PREFIXES, RESERVED_TABLES
 from app.data.store import DataStore
 from app.invoices.extract import normalize_number, normalize_supplier
 
@@ -52,8 +53,12 @@ def _pick(columns: list[str], role: str) -> str | None:
 
 
 def bank_tables(store: DataStore) -> list[str]:
+    """Tables that look like bank statements. Tables the app writes itself (reconciliation output,
+    extracted invoices, QuickBooks copies) are never statements, even if their names say "bank"."""
     out = []
     for t in store.tables():
+        if t in RESERVED_TABLES or t.startswith(RESERVED_PREFIXES):
+            continue
         if not any(w in t.lower() for w in ("bank", "statement", "transaction")):
             continue
         cols = [c for c, _ in store.schema().get(t, [])]

@@ -1,11 +1,14 @@
-"""HTTP hardening: body-size limit, per-IP rate limiting, optional API key, security headers."""
+"""HTTP hardening: body-size limit, per-IP rate limiting, optional API key, security headers, a Host
+allowlist (DNS-rebinding defence) and a same-origin check on state-changing requests (CSRF defence)."""
 
 from __future__ import annotations
 
 import time
 from collections import defaultdict
+from urllib.parse import urlsplit
 
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
@@ -99,6 +102,33 @@ class ApiKeyMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+class SameOriginMiddleware(BaseHTTPMiddleware):
+    """Reject cross-site requests that change state. The API key's loopback exemption means a page on
+    any website could otherwise make the user's browser POST to 127.0.0.1 (upload, sync, approve...).
+    Browsers send Sec-Fetch-Site and/or Origin on such requests; clients that send neither (curl,
+    scripts) are not a browser acting for another site and are left to the API key."""
+
+    async def dispatch(self, request: Request, call_next):
+        if request.method not in SAFE_METHODS and not same_origin(request):
+            return JSONResponse({"error": "cross-site request blocked"}, status_code=403)
+        return await call_next(request)
+
+
+def same_origin(request: Request) -> bool:
+    site = request.headers.get("sec-fetch-site")
+    if site and site not in ("same-origin", "none"):
+        return False
+    origin = request.headers.get("origin")
+    if origin is None:
+        return True
+    parts = urlsplit(origin)
+    host = request.headers.get("host", "")
+    return parts.scheme in ("http", "https") and parts.netloc.lower() == host.lower()
+
+
 def install_security_middleware(app, settings) -> None:
     # Order matters: headers outermost, then auth, rate, body (added last = runs first).
     app.add_middleware(SecurityHeadersMiddleware)
@@ -116,3 +146,7 @@ def install_security_middleware(app, settings) -> None:
         max_bytes=settings.max_body_bytes,
         overrides={"/upload": settings.max_upload_bytes + 64 * 1024},
     )
+    app.add_middleware(SameOriginMiddleware)
+    hosts = settings.allowed_host_list()
+    if hosts and "*" not in hosts:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=hosts)

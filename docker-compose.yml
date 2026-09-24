@@ -1,5 +1,7 @@
 # docker compose up -d        → the assistant on http://127.0.0.1:8000 (bound to this machine only)
-# docker compose --profile ollama up -d   → also run Ollama in a container (Linux; CPU/NVIDIA)
+# OLLAMA_BASE_URL=http://ollama:11434/v1 docker compose --profile ollama up -d
+#                              → also run Ollama in a container (Linux; CPU/NVIDIA) and use it
+#                                (same as `make docker-up-ollama`)
 #
 # On a Mac Studio, prefer native Ollama (Metal GPU): keep the default OLLAMA_BASE_URL below.
 services:
@@ -18,7 +20,10 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./data/sample:/data            # replace with your documents folder when approved
+      # /data is a writable volume owned by the container user (uploads land in /data/uploads);
+      # your documents are mounted read-only inside it. Replace ./data/sample when approved.
+      - assistant-data:/data
+      - ./data/sample:/data/library:ro
       - assistant-storage:/storage     # database, reviews, approvals, activity log, tokens
     read_only: true
     tmpfs:
@@ -36,5 +41,6 @@ services:
       - ollama-models:/root/.ollama
 
 volumes:
+  assistant-data:
   assistant-storage:
   ollama-models:

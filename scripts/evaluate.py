@@ -116,6 +116,7 @@ def main() -> None:
     # 1 + 2. extraction ------------------------------------------------------------
     per_split: dict[str, dict[str, list[int]]] = {}
     lines_ok = 0
+    fields_ok = 0
     detail_rows = []
     flags_ok = 0
     for t in truth:
@@ -131,6 +132,7 @@ def main() -> None:
             else:
                 wrong.append(f"{f}: got {got!r}, expected {t[f]!r}")
         got_lines = [(i["description"], i["quantity"], i["unit_price"], i["amount"]) for i in ex.line_items]
+        fields_ok += not wrong
         lines_ok += got_lines == [(i["description"], i["quantity"], i["unit_price"], i["amount"]) for i in t["lines"]]
         detail_rows.append((t["split"], t["file"], "yes" if doc.used_ocr else "", "all correct" if not wrong else "; ".join(wrong),
                             ex.confidence, " / ".join(ex.issues) or "-"))
@@ -283,6 +285,26 @@ def main() -> None:
     dest.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n".join(lines))
     print(f"\nWrote {dest}")
+
+    # Acceptance gate: the report above is diagnostic; these are the results the prototype must keep.
+    # Paraphrase search depends on the embedder: offline hashing reaches 4/8, a semantic model 7/8.
+    required = [
+        ("invoices with every field correct", fields_ok, len(truth)),
+        ("invoices with every line item correct", lines_ok, len(truth)),
+        ("planted problems flagged", flags_ok, len(EXPECTED_FLAGS)),
+        ("search questions with the right document first", top1, len(SEARCH_CASES)),
+        ("answerable questions still answered", answered, len(SEARCH_CASES)),
+        ("reworded questions found", para_ok, 4 if not embeddings.semantic else 6),
+        ("unanswerable questions answered 'not found'", nf_ok, len(NOT_FOUND_CASES)),
+        ("invoices reconciled against QuickBooks", recon_ok, len(EXPECTED_RECON)),
+        ("bank outcomes found", bank_ok, len(EXPECTED_BANK)),
+    ]
+    failed = [(name, got, need) for name, got, need in required if got < need]
+    for name, got, need in failed:
+        print(f"ACCEPTANCE FAILED: {name}: {got} (need at least {need})", file=sys.stderr)
+    if failed:
+        sys.exit(1)
+    print(f"All {len(required)} acceptance thresholds met.")
 
 
 if __name__ == "__main__":

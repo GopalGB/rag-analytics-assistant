@@ -191,7 +191,11 @@ class AgentEngine:
 
         def classify(q: str) -> RouteDecision:
             def call(m: BaseLLM) -> RouteDecision:
-                text = q if getattr(m, "is_local", False) else PrivacyGuard(self.privacy.policy).outgoing(q)
+                text = q
+                if not getattr(m, "is_local", False):
+                    guard = PrivacyGuard(self.privacy.policy)
+                    guard.cloud = True  # mask PII before the question reaches a cloud classifier
+                    text = guard.outgoing(q)
                 return generate(m, RouteDecision, CLASSIFY_SYSTEM, f"REQUEST:\n{text}", retries=1)
 
             out, _ = self.router.run("fast", call, local_only=local_only, purpose="route")
@@ -293,7 +297,9 @@ class AgentEngine:
         checks = self._check_citations(final_text, toolbox, [h.file for h in visible], tables)
 
         pol = self.privacy.policy
-        involved = decision.data_classes | {pol.classify_table(t) for t in tables}
+        # Every class the turn actually read (all SQL statements and returned passages, not just the last
+        # query) decides whether it may later be shown to a cloud model as conversation history.
+        involved = decision.data_classes | {pol.classify_table(t) for t in tables} | toolbox.touched_classes
         routing = {
             **plan.to_dict(),
             **trace.to_dict(),

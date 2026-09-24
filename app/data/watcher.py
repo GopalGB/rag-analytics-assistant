@@ -49,7 +49,7 @@ def reindex(
     manages (extracted invoices, QuickBooks data) are left alone."""
     previous = set(engine.store.file_tables)
     loaded = ingest.load_tables(engine.store, data_dir)
-    for table in previous - set(loaded):
+    for table in previous - engine.store.file_tables:
         engine.store.drop_table(table)
     docs = ingest.load_documents(data_dir, ocr, cache)
     old = engine.retriever

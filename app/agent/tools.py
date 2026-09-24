@@ -55,6 +55,7 @@ class ToolBox:
         self.actions: list[dict[str, Any]] = []
         self.calls: list[dict[str, Any]] = []  # tool-call log for the trace
         self.listener: Any = None  # optional callback(kind, data) for live progress (streaming)
+        self.touched_classes: set[str] = set()  # data classes of every table read and passage returned
 
     def tool_specs(self) -> list[dict[str, Any]]:
         return [tool_spec(n) for n in self.allowed_tools]
@@ -104,6 +105,7 @@ class ToolBox:
             return {"error": f"unsafe query rejected: {exc}"}
         except Exception as exc:  # surface DB errors to the model so it can retry
             return {"error": f"query failed: {exc}"}
+        self._touch_tables(sql)
         self.columns, self.rows = columns, rows
         preview = [dict(zip(columns, r, strict=False)) for r in rows[:50]]
         return {"columns": columns, "row_count": len(rows), "rows": preview}
@@ -123,7 +125,18 @@ class ToolBox:
             out["note"] = f"{len(hits) - len(results)} passage(s) withheld: that data must stay on this machine."
         return out
 
+    def _touch_tables(self, sql: str) -> None:
+        if not self.privacy:
+            return
+        try:
+            tables = self.store.referenced_tables(sql)
+        except UnsafeQueryError:
+            return
+        self.touched_classes |= {self.privacy.policy.classify_table(t) for t in tables}
+
     def add_source(self, hit: Any) -> None:
+        if self.privacy:
+            self.touched_classes.add(self.privacy.policy.classify_file(hit.file))
         if any(s["file"] == hit.file and s["chunk_id"] == hit.chunk_id for s in self.sources):
             return
         self.sources.append(

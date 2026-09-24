@@ -15,7 +15,7 @@ function el(tag, attrs = {}, ...kids) {
   return e;
 }
 function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 3200); }
-function headers(json = true) { const h = { "X-User": who.value.trim() }; if (json) h["Content-Type"] = "application/json"; return h; }
+function headers(json = true) { const h = { "X-User": encodeURIComponent(who.value.trim()) }; if (json) h["Content-Type"] = "application/json"; return h; }
 async function api(path, opts = {}) {
   const r = await fetch(path, { ...opts, headers: { ...headers(!(opts.body instanceof FormData)), ...(opts.headers || {}) } });
   const body = await r.json().catch(() => ({}));

@@ -12,6 +12,7 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any
+from urllib.parse import unquote
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import (
@@ -83,7 +84,7 @@ def _ws(request: Request) -> Workspace:
 
 def _actor(request: Request) -> str:
     """Display name of the person using the UI (for the activity log). Not an authentication factor."""
-    name = re.sub(r"[^\w .@-]", "", request.headers.get("x-user", "")).strip()[:60]
+    name = re.sub(r"[^\w .@-]", "", unquote(request.headers.get("x-user", ""))).strip()[:60]
     return name or "local-user"
 
 

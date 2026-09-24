@@ -39,6 +39,7 @@ os.environ.update(
         "QBO_MODE": "mock",
         "QBO_FIXTURE": str(ROOT / "data" / "qbo_sandbox" / "sandbox_company.json"),
         "AUTO_REINDEX": "false",  # keep the test hermetic (no background poller)
+        "ALLOWED_HOSTS": "127.0.0.1,localhost,testserver",  # TestClient sends Host: testserver
     }
 )
 

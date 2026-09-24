@@ -19,7 +19,7 @@ from app.rag.retriever import Chunk
 
 _TABLE_SUFFIXES = {".csv", ".xlsx"}
 # Tables the app manages itself; a spreadsheet with the same name is loaded under a prefixed name.
-RESERVED_TABLES = {"invoices", "invoice_reconciliation"}
+RESERVED_TABLES = {"invoices", "invoice_reconciliation", "invoice_lines", "bank_reconciliation"}
 RESERVED_PREFIXES = ("qbo_",)
 
 
@@ -55,13 +55,15 @@ def _read_table(path: Path) -> pd.DataFrame:
 def load_tables(store: DataStore, data_dir: str) -> dict[str, int]:
     """Load every CSV/XLSX under `data_dir` as a table named after the file stem. Returns {table: rows}."""
     loaded: dict[str, int] = {}
+    failed: set[str] = set()
     for path, _rel in iter_files(data_dir, _TABLE_SUFFIXES):
         table = _safe_table_name(path.stem)
         try:
             loaded[table] = store.load_dataframe(table, _read_table(path))
         except Exception:
-            continue  # unreadable spreadsheet (e.g. mid-copy); retried on the next reindex
-    store.file_tables = set(loaded)
+            # Unreadable right now (e.g. mid-copy): keep the previous table; retried on the next reindex.
+            failed.add(table)
+    store.file_tables = set(loaded) | (failed & store.file_tables)
     return loaded
 
 

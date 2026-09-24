@@ -39,7 +39,7 @@ The **Privacy & security** tab shows this live for the current configuration.
 | QuickBooks | GET-only client; `SELECT * FROM <allowlisted entity>` only; single-use OAuth `state` checked; production refused by default; one-click revoke + local data deletion. |
 | Credentials | QuickBooks tokens in a `0600` file under `storage/secrets/` or the macOS Keychain (`SECRETS_BACKEND=keyring`). `.env` and `storage/` are git-ignored. The app never asks for banking credentials or company passwords. |
 | Files | Uploads are type-checked and size-limited and stored under `DATA_DIR/uploads/`; file names are sanitised. Original-file links are confined to `DATA_DIR` (path traversal blocked). Word files are read as XML; macros are never executed. |
-| Audit | `storage/audit.jsonl`: each entry holds the SHA-256 of the previous one, so an edited or deleted line is detected (**Activity log** shows "Integrity verified"). |
+| Audit | `storage/audit.jsonl`: each entry holds the SHA-256 of the previous one, so editing any line, or deleting or reordering a line that has later entries after it, is detected (**Activity log** shows "Integrity verified" only when the chain is intact). Removing the most recent entries from the end is **not** detected by the chain alone; for that, copy the log off the machine regularly (backups) and compare. |
 | Human review | Every invoice extraction starts as *needs review*; approvals and rejections require a name; reviews are logged. |
 | Encryption at rest | Use FileVault on the Mac (covers documents, database, log and tokens). |
 | Model training | Local models don't learn from use. Cloud AI is off by default; if approved, use a provider tier that contractually excludes training and retention. |

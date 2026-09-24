@@ -1,4 +1,4 @@
-.PHONY: setup run demo test lint evaluate sample-data backup verify-backup restore docker docker-up reset clean
+.PHONY: setup run demo test lint evaluate sample-data backup verify-backup restore docker docker-up docker-up-ollama reset clean
 
 setup:            ## create venv + install everything (runtime + dev/test)
 	python3 -m venv .venv
@@ -36,6 +36,9 @@ docker:           ## build the container image
 
 docker-up:        ## run with docker compose (bound to 127.0.0.1:8000)
 	docker compose up -d --build
+
+docker-up-ollama: ## same, plus Ollama in a container (Linux servers without a native Ollama)
+	OLLAMA_BASE_URL=http://ollama:11434/v1 docker compose --profile ollama up -d --build
 
 reset:            ## delete local state + uploaded files (keeps the bundled sample data)
 	rm -rf storage data/sample/uploads

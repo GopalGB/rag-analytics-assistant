@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     # Loopback exemption for the API key. Safe for local use; set False behind a reverse proxy
     # (where every request appears to come from 127.0.0.1) so the key is always required.
     trust_loopback: bool = True
+    # Host names the server answers to (DNS-rebinding defence). Add the Mac's LAN name/IP when serving
+    # other machines, or the public domain for a hosted demo. "*" disables the check.
+    allowed_hosts: str = "127.0.0.1,localhost,::1"
 
     # --- AI models ---
     # With no model the assistant still works: document questions return the most relevant source
@@ -138,6 +141,9 @@ class Settings(BaseSettings):
     prefetch_passages: int = 4  # top passages handed to the model up front (helps small local models)
     max_sql_rows: int = 200
     history_turns: int = 8
+
+    def allowed_host_list(self) -> list[str]:
+        return [h.strip() for h in self.allowed_hosts.split(",") if h.strip()]
 
     def warnings(self) -> list[str]:
         """Risky or inconsistent settings. Logged at startup and shown on /health; never fatal."""
