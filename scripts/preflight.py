@@ -93,7 +93,8 @@ def main() -> None:
         hosts = set(s.allowed_host_list())
         r.check(s.public_demo, "PUBLIC_DEMO=true (read-only, no conversation memory)")
         r.check(s.db_path == ":memory:", "DB_PATH=:memory: (serverless filesystems are read-only)")
-        r.check(str(s.storage_dir).startswith("/tmp"), "STORAGE_DIR is under /tmp (the only writable path)")
+        r.check(Path(s.storage_dir).resolve().is_relative_to(Path("/tmp").resolve()),
+                "STORAGE_DIR is under /tmp (the only writable path)")
         r.check(not s.auto_reindex, "AUTO_REINDEX=false (no file watcher on a serverless function)")
         r.check(bool(hosts - LOCAL_HOSTS) and "*" not in hosts, "ALLOWED_HOSTS lists the public host name(s)")
         r.check(bool(cloud) and s.allow_cloud_ai, "a hosted model is configured (provider key + ALLOW_CLOUD_AI=true)")

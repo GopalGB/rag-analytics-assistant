@@ -185,6 +185,8 @@ _NUM_PATTERNS = [
     (r"\b(?:our\s+)?ref(?:erence)?\.?\s*[:#]\s*([A-Za-z0-9][A-Za-z0-9\-/_.]*[A-Za-z0-9])", 0.5),
     (r"^\s*invoice\s+([A-Z0-9]+(?:[-/][A-Z0-9]+)+)\s*$", 0.7),
 ]
+_DIGIT_FREE_OK = {_NUM_PATTERNS[-1][0]}  # only "Invoice ABC-DEF" on its own line may have a number without digits
+_PLACEHOLDERS = {"N/A", "N-A", "NA", "TBD", "TBA", "TBC", "NONE", "NIL", "NULL", "MISSING", "UNKNOWN", "PENDING"}
 _PO_PATTERN = r"\b(?:PO|P\.O\.|purchase\s+order)\s*(?:number|no\.?|#)?\s*[:#]?\s*([A-Za-z0-9][A-Za-z0-9\-/]*\d[A-Za-z0-9\-/]*)"
 _INV_DATE_LABEL = r"\b(invoice\s+date|date\s+of\s+issue|issue\s+date|issued(?:\s+on)?|tax\s+point|dated|date)\b\s*[:\-]?\s*"
 _DUE_DATE_LABEL = r"\b(due\s+date|payment\s+due|due\s+by|due|pay\s+by|payment\s+by|payment\s+date)\b\s*[:\-]?\s*"
@@ -319,8 +321,10 @@ def extract_rules(text: str, known_suppliers: list[str] | None = None, date_orde
         for line in lines:
             for m in rx.finditer(line):
                 val = m.group(1).rstrip(".")
-                ident = re.search(r"\d", val) or re.fullmatch(r"[A-Z0-9]+(?:[-/][A-Z0-9]+)+", val)
-                if ident and len(val) <= 30 and not re.fullmatch(DATE_RE, val, re.I):
+                ident = re.search(r"\d", val) or (
+                    pat in _DIGIT_FREE_OK and re.fullmatch(r"[A-Z0-9]{2,}(?:[-/][A-Z0-9]{2,})+", val))
+                if (ident and val.upper() not in _PLACEHOLDERS and len(val) <= 30
+                        and not re.fullmatch(DATE_RE, val, re.I)):
                     hit = FieldValue(val, conf, line.strip())
                     break
             if hit:

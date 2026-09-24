@@ -46,7 +46,7 @@ def _days_apart(a: Any, b: Any) -> int:
 def _bills(store: DataStore) -> list[dict[str, Any]]:
     if "qbo_bills" not in store.tables():
         return []
-    cols, rows = store.run_select("SELECT * FROM qbo_bills", max_rows=100000)
+    cols, rows = store.run_select("SELECT * FROM qbo_bills", max_rows=100000, internal=True)
     return [dict(zip(cols, r, strict=False)) for r in rows]
 
 

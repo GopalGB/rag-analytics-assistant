@@ -521,7 +521,7 @@ function sourceNode(s) {
 }
 function renderAttention(a) {
   const c = a.counts;
-  $("#attention-summary").textContent = `${c.critical} do first · ${c.warning} this week · ${Charts.fmt.money(a.money_at_stake)} in open problems`;
+  $("#attention-summary").textContent = `${c.critical} do first · ${c.warning} this week · ${[Charts.fmt.money(a.money_at_stake), ...Object.entries(a.money_at_stake_other || {}).map(([cur, v]) => `${cur} ${Charts.fmt.money2(v).replace(/^\$/, "")}`)].join(" + ")} in open problems`;
   const items = attentionAll ? a.items : a.items.filter((i) => i.severity !== "info").slice(0, 8);
   $("#attention-list").replaceChildren(...items.map((i) => {
     const [color, label] = ATTN_SEV[i.severity];
@@ -531,7 +531,7 @@ function renderAttention(a) {
     const TAB_NAMES = { quickbooks: "QuickBooks", invoices: "Invoices", documents: "Documents", reports: "Reports" };
     if (i.link && TAB_NAMES[i.link]) meta.append(el("button", { type: "button", text: "Open " + TAB_NAMES[i.link], onclick: () => show(i.link) }));
     return el("li", {}, el("span", { class: "sev" }, dot, label), el("span", { class: "t", text: i.title }),
-      el("span", { class: "amt", text: i.amount ? Charts.fmt.money2(i.amount) : "" }), el("span", { class: "d", text: i.detail }), meta);
+      el("span", { class: "amt", text: i.amount ? (i.currency && i.currency !== "USD" ? `${i.currency} ${Charts.fmt.money2(i.amount).replace(/^\$/, "")}` : Charts.fmt.money2(i.amount)) : "" }), el("span", { class: "d", text: i.detail }), meta);
   }));
   if (!items.length) $("#attention-list").append(el("li", { class: "muted", text: "Nothing needs attention right now." }));
   const more = $("#attention-more");

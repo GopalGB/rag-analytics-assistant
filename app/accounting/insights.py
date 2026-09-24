@@ -41,16 +41,26 @@ _LABELS = {
 }
 
 
-def _money(v: float | None) -> str:
-    return "" if v is None else f"${v:,.2f}"
+HOME_CURRENCY = "USD"  # amounts with no currency of their own (QuickBooks, bank, budget) are in this currency
+
+
+def money(v: float | None, currency: str | None = None) -> str:
+    """`$1,234.00` for US dollars, `EUR 1,234.00` for anything else. Amounts are never summed across currencies."""
+    if v is None:
+        return ""
+    cur = (currency or HOME_CURRENCY).upper()
+    return f"${v:,.2f}" if cur == "USD" else f"{cur} {v:,.2f}"
+
+
+_money = money
 
 
 def _item(severity: str, category: str, title: str, detail: str, source: dict[str, Any], amount: float | None = None,
-          ask: str | None = None, link: str | None = None) -> dict[str, Any]:
+          ask: str | None = None, link: str | None = None, currency: str | None = None) -> dict[str, Any]:
     key = f"{category}|{title}|{detail}|{source.get('name')}|{amount}"
     return {"id": hashlib.sha1(key.encode()).hexdigest()[:12], "severity": severity, "category": category,
             "title": title, "detail": detail, "amount": None if amount is None else round(float(amount), 2),
-            "source": source, "ask": ask, "link": link}
+            "currency": (currency or HOME_CURRENCY).upper(), "source": source, "ask": ask, "link": link}
 
 
 # --------------------------------------------------------------------------- policy read from documents
@@ -110,6 +120,10 @@ def attention(store: DataStore, documents: list, as_of: date) -> dict[str, Any]:
 
     # 1. invoices vs QuickBooks
     record_rule = recording_deadline_days(documents)
+    currency_of: dict[str, str] = {}
+    if "invoices" in tables:
+        currency_of = {r["file"]: r["currency"] for r in query(store, "SELECT file, currency FROM invoices")
+                       if r["file"] and r["currency"]}
     if "invoice_reconciliation" in tables:
         for r in query(store, "SELECT file, supplier, invoice_number, invoice_date, document_total, qbo_total, "
                               "difference, status, severity, detail FROM invoice_reconciliation WHERE severity <> 'ok'"):
@@ -126,21 +140,24 @@ def attention(store: DataStore, documents: list, as_of: date) -> dict[str, Any]:
                                f"{late} business day(s) past that ({record_rule[1].rsplit('/', 1)[-1]}).")
             items.append(_item(sev, "reconciliation", f"{who}: {label}", detail,
                                {"type": "file" if r["file"] else "table", "name": r["file"] or "qbo_bills"},
-                               amount, f"What should we do about {who}?", "quickbooks"))
+                               amount, f"What should we do about {who}?", "quickbooks", currency_of.get(r["file"])))
 
     # 2. invoices awaiting review with problems, and the approval policy
     rules = approval_rules(documents)
     if "invoices" in tables:
-        for r in query(store, "SELECT file, supplier, invoice_number, total, status, issues, issue_count, duplicate_of "
-                              "FROM invoices WHERE status = 'needs_review'"):
+        for r in query(store, "SELECT file, supplier, invoice_number, total, currency, status, issues, issue_count, "
+                              "duplicate_of FROM invoices WHERE status = 'needs_review'"):
+            cur = (r["currency"] or HOME_CURRENCY).upper()
             who = f"{r['supplier'] or 'Unknown supplier'} {r['invoice_number'] or '(no number)'}"
             if r["issue_count"] and not r["duplicate_of"]:
                 first = (r["issues"] or "").split(" | ")[0]
                 items.append(_item("warning", "review", f"Check invoice {who}", first,
                                    {"type": "file", "name": r["file"]}, r["total"],
-                                   f"What is wrong with invoice {who}?", "invoices"))
+                                   f"What is wrong with invoice {who}?", "invoices", cur))
             total = r["total"] or 0
-            rule = next((x for x in sorted(rules, key=lambda x: -x.low) if total > x.low and total <= x.high), None)
+            # the policy's thresholds are in the home currency: don't compare a foreign-currency total against them
+            rule = None if cur != HOME_CURRENCY else next(
+                (x for x in sorted(rules, key=lambda x: -x.low) if total > x.low and total <= x.high), None)
             if rule and rule.low > 0 and not r["duplicate_of"]:
                 top_tier = rule.high == float("inf")  # the strictest rule is the one worth flagging
                 items.append(_item("warning" if top_tier else "info", "policy",
@@ -211,15 +228,18 @@ def attention(store: DataStore, documents: list, as_of: date) -> dict[str, Any]:
     items.sort(key=lambda i: (SEVERITY_ORDER[i["severity"]], -(i["amount"] or 0)))
     counts = {s: sum(1 for i in items if i["severity"] == s) for s in SEVERITY_ORDER}
     # money involved in problems (not in approvals or reviews, and each amount/source counted once)
-    seen: set[tuple[str, float]] = set()
-    at_stake = 0.0
+    # (amounts in different currencies are kept apart: money_at_stake is the home currency, the rest per currency)
+    seen: set[tuple[str, float, str]] = set()
+    by_currency: dict[str, float] = {}
     for i in items:
-        key = (i["source"].get("name", ""), i["amount"] or 0)
+        key = (i["source"].get("name", ""), i["amount"] or 0, i["currency"])
         if i["severity"] != "info" and i["category"] not in ("policy", "review") and i["amount"] and key not in seen:
             seen.add(key)
-            at_stake += i["amount"]
-    at_stake = round(at_stake, 2)
-    return {"as_of": as_of.isoformat(), "counts": counts, "money_at_stake": at_stake, "items": items,
+            by_currency[i["currency"]] = by_currency.get(i["currency"], 0.0) + i["amount"]
+    at_stake = round(by_currency.pop(HOME_CURRENCY, 0.0), 2)
+    other = {c: round(v, 2) for c, v in sorted(by_currency.items())}
+    return {"as_of": as_of.isoformat(), "counts": counts, "currency": HOME_CURRENCY, "money_at_stake": at_stake,
+            "money_at_stake_other": other, "items": items,
             "deadlines": [d.to_dict() for d in deadlines],
             "approval_rules": [{"over": r.low, "up_to": None if r.high == float("inf") else r.high,
                                 "approver": r.approver, "file": r.file} for r in rules]}
@@ -229,28 +249,31 @@ def _anomalies(store: DataStore, tables: set[str]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     if "qbo_bills" not in tables:
         return out
-    bills = query(store, "SELECT vendor_name, doc_number, txn_date, total FROM qbo_bills WHERE total IS NOT NULL")
-    by_vendor: dict[str, list[dict[str, Any]]] = {}
-    for b in bills:
-        by_vendor.setdefault(b["vendor_name"] or "?", []).append(b)
-    for vendor, rows in by_vendor.items():
+    has_currency = "currency" in {c.lower() for c, _ in store.schema().get("qbo_bills", [])}
+    bills = query(store, "SELECT vendor_name, doc_number, txn_date, total"
+                         f"{', currency' if has_currency else ''} FROM qbo_bills WHERE total IS NOT NULL")
+    by_vendor: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for b in bills:  # amounts are only compared within one supplier and one currency
+        by_vendor.setdefault((b["vendor_name"] or "?", (b.get("currency") or HOME_CURRENCY).upper()), []).append(b)
+    for (vendor, cur), rows in by_vendor.items():
         for b in rows:
             others = [o["total"] for o in rows if o is not b and o["total"]]
             if len(others) >= 2 and b["total"] > 2 * median(others):
                 out.append(_item("warning", "anomaly", f"{vendor} bill {b['doc_number']} is unusually large",
-                                 f"{_money(b['total'])} is more than twice this supplier's typical bill "
-                                 f"({_money(median(others))}).", {"type": "table", "name": "qbo_bills"}, b["total"],
-                                 f"Is the {vendor} bill {b['doc_number']} for {_money(b['total'])} correct?", "quickbooks"))
+                                 f"{money(b['total'], cur)} is more than twice this supplier's typical bill "
+                                 f"({money(median(others), cur)}).", {"type": "table", "name": "qbo_bills"}, b["total"],
+                                 f"Is the {vendor} bill {b['doc_number']} for {money(b['total'], cur)} correct?", "quickbooks",
+                                 cur))
         seen: dict[float, dict[str, Any]] = {}
         for b in sorted(rows, key=lambda x: str(x["txn_date"])):
             prev = seen.get(round(b["total"], 2))
             if prev and prev["doc_number"] != b["doc_number"]:
                 gap = abs((_as_date(b["txn_date"]) - _as_date(prev["txn_date"])).days) if b["txn_date"] and prev["txn_date"] else 0
                 if gap <= 45:
-                    out.append(_item("warning", "anomaly", f"{vendor} billed {_money(b['total'])} twice",
+                    out.append(_item("warning", "anomaly", f"{vendor} billed {money(b['total'], cur)} twice",
                                      f"Bills {prev['doc_number']} and {b['doc_number']} have the same amount, {gap} days "
                                      "apart. Check it isn't a double charge.", {"type": "table", "name": "qbo_bills"},
-                                     b["total"], f"Did {vendor} charge us twice?", "quickbooks"))
+                                     b["total"], f"Did {vendor} charge us twice?", "quickbooks", cur))
             seen[round(b["total"], 2)] = b
     return out
 
@@ -262,6 +285,8 @@ def _as_date(v: Any) -> date:
 # --------------------------------------------------------------------------- tool view for the model
 def for_model(result: dict[str, Any], limit: int = 12) -> dict[str, Any]:
     """Compact version for the agent tool: the top items with their sources."""
-    top = [{k: i[k] for k in ("severity", "category", "title", "detail", "amount", "source")} for i in result["items"][:limit]]
+    top = [{k: i[k] for k in ("severity", "category", "title", "detail", "amount", "currency", "source")}
+           for i in result["items"][:limit]]
     return {"as_of": result["as_of"], "counts": result["counts"], "money_at_stake": result["money_at_stake"],
+            "currency": result["currency"], "money_at_stake_other": result["money_at_stake_other"],
             "items": top, "note": "Cite the source of each item (file or table). Figures are drafts for review."}

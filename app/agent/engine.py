@@ -163,6 +163,8 @@ class AgentEngine:
 
     # ---- "what needs attention?" without a model: the ranked list, straight from the data ---------------
     def _attention_answer(self, reason: str) -> dict[str, Any]:
+        from app.accounting.insights import money as fmt_money
+
         a = self.insights()
         top = [i for i in a["items"] if i["severity"] != "info"][:8]
         c = a["counts"]
@@ -172,7 +174,7 @@ class AgentEngine:
         for n, i in enumerate(top, 1):
             s = i["source"]
             ref = cite(s["name"], s.get("page")) if s.get("type") == "file" else f"table {s['name']}"
-            money = f"${i['amount']:,.2f}" if i["amount"] else ""
+            money = fmt_money(i["amount"], i.get("currency")) if i["amount"] else ""
             amount = f" ({money})" if money and money not in i["title"] else ""
             title = i["title"].rstrip(".")
             lines.append(f"{n}. {'Do first' if i['severity'] == 'critical' else 'This week'}: {title}{amount}. "

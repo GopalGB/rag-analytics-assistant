@@ -31,7 +31,7 @@ class ReportContext:
 
 
 def _q(store: DataStore, sql: str) -> list[dict[str, Any]]:
-    return analytics.query(store, sql, 1000)  # failures are logged and reported at the top of the report
+    return analytics.query(store, sql)  # failures are logged and reported at the top of the report
 
 
 def _money(v: Any) -> str:
@@ -294,13 +294,15 @@ def report_project(ctx: ReportContext) -> str:
 
 
 def report_month_end(ctx: ReportContext) -> str:
-    from app.accounting.insights import attention
+    from app.accounting.insights import attention, money
 
     a = attention(ctx.store, ctx.documents, ctx.as_of)
     c = a["counts"]
+    at_stake = ", ".join([money(a["money_at_stake"], a["currency"])]
+                         + [money(v, cur) for cur, v in a["money_at_stake_other"].items()])
     out = _header("Month-end checklist", ctx)
     out += [f"{c['critical']} to do first, {c['warning']} this week, {c['info']} for information. "
-            f"Money involved in open problems: {_money(a['money_at_stake'])}. Every item below was computed from the "
+            f"Money involved in open problems: {at_stake}. Every item below was computed from the "
             "local data and names its source.", ""]
 
     def src(i: dict[str, Any]) -> str:
@@ -311,7 +313,7 @@ def report_month_end(ctx: ReportContext) -> str:
     for sev, heading in (("critical", "Do first"), ("warning", "This week"), ("info", "For information")):
         rows = [i for i in a["items"] if i["severity"] == sev]
         out += [f"## {heading} ({len(rows)})", ""]
-        out += [f"- [ ] **{i['title']}**{' (' + _money(i['amount']) + ')' if i['amount'] else ''}: {i['detail']} "
+        out += [f"- [ ] **{i['title']}**{' (' + money(i['amount'], i['currency']) + ')' if i['amount'] else ''}: {i['detail']} "
                 f"(source: {src(i)})" for i in rows] or ["_None._"]
         out.append("")
     out += ["## Deadlines found in the documents", ""]

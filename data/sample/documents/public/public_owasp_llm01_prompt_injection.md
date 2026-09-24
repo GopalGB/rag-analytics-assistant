@@ -1,3 +1,8 @@
+> Source: OWASP Foundation, *OWASP Top 10 for LLM Applications 2025*, "LLM01:2025 Prompt Injection" (https://github.com/OWASP/www-project-top-10-for-large-language-model-applications/blob/main/2_0_vulns/LLM01_PromptInjection.md).  
+> License: Creative Commons Attribution-ShareAlike 4.0 (CC BY-SA 4.0), https://creativecommons.org/licenses/by-sa/4.0/.  
+> Modified: this attribution header was added; the text below is otherwise unchanged. Redistributed as a public
+> sample document for the assistant prototype.
+
 ## LLM01:2025 Prompt Injection
 
 ### Description

@@ -315,17 +315,19 @@ def test_extract_endpoint_reads_pasted_invoice(client):
 def test_no_api_response_contains_a_configured_secret(client):
     """Keys configured on the server never reach the browser, whatever page is opened."""
     from app.main import app as the_app
-    from app.security.output_filter import register_secret
+    from app.security.output_filter import register_secret, scrub
 
     ws = the_app.state.ws if hasattr(the_app.state, "ws") else None
-    fake = "sk-test-" + "Q" * 32
+    fake = "orchid-lantern-meadow-7731-quartz"  # matches no credential pattern: only the registry can catch it
+    assert scrub(f"key: {fake}") == f"key: {fake}"
     register_secret(fake)
+    assert fake not in scrub(f"key: {fake}")  # the exact configured value is now redacted from any answer
     if ws is not None:
         ws.settings.anthropic_api_key = fake
     for path in ("/health", "/router", "/privacy", "/dashboard", "/documents", "/invoices", "/qbo/status",
                  "/reports", "/audit", "/examples", "/approvals"):
         body = client.get(path).text
-        assert fake not in body and "QQQQQQQQQQ" not in body, path
+        assert fake not in body and "lantern-meadow" not in body, path
 
 
 def test_insights_and_deadlines_endpoints(client):

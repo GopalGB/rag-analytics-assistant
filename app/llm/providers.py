@@ -104,8 +104,14 @@ def text_tool_calls(content: str, allowed: set[str]) -> list[dict[str, Any]]:
         name = obj.get("name") if isinstance(obj, dict) else None
         if name in allowed:
             args = obj.get("arguments", obj.get("parameters", {}))
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args) if args.strip() else {}
+                except json.JSONDecodeError:
+                    args = {}
+            # always a JSON *object* string: servers that validate tool_calls reject "", "null" or "[...]"
             calls.append({"id": f"text_call_{i}", "type": "function",
-                          "function": {"name": name, "arguments": args if isinstance(args, str) else json.dumps(args)}})
+                          "function": {"name": name, "arguments": json.dumps(args if isinstance(args, dict) else {})}})
     return calls
 
 

@@ -12,6 +12,7 @@ so only set them for the hardware you are accepting.
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import math
 import sys
@@ -19,8 +20,8 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
-from urllib.request import Request, urlopen
+from urllib.parse import quote, urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 # (name, question, expected source file suffix or None, check, needs an AI model)
 CASES: list[tuple[str, str, str | None, str, bool]] = [
@@ -48,8 +49,36 @@ def percentile(values: list[float], rank: float) -> float | None:
     return ordered[lo] if lo == hi else ordered[lo] + (ordered[hi] - ordered[lo]) * (pos - lo)
 
 
+def _is_loopback(host: str | None) -> bool:
+    if not host:
+        return False
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host.strip("[]")).is_loopback
+    except ValueError:
+        return False
+
+
+class _SameOriginRedirects(HTTPRedirectHandler):
+    """Follow a redirect only to the same scheme and host, so the API key is never sent anywhere else."""
+
+    def __init__(self, origin: tuple[str, str]):
+        self.origin = origin
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001, ANN201
+        target = urlsplit(newurl)
+        if (target.scheme, target.netloc) != self.origin:
+            return None  # urllib then raises HTTPError with the 3xx status: reported as a failure
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def urllib_http(base_url: str, api_key: str | None, timeout: float = 300.0) -> Http:
     base = base_url.rstrip("/") + "/"
+    parts = urlsplit(base)
+    if api_key and parts.scheme != "https" and not _is_loopback(parts.hostname):
+        raise SystemExit(f"refusing to send APP_API_KEY over plain HTTP to {parts.hostname}: use an https:// URL")
+    opener = build_opener(_SameOriginRedirects((parts.scheme, parts.netloc)))
 
     def call(method: str, path: str, body: dict | None) -> tuple[int, Any, bytes]:
         headers = {"Accept": "application/json"}
@@ -61,7 +90,7 @@ def urllib_http(base_url: str, api_key: str | None, timeout: float = 300.0) -> H
             headers["Content-Type"] = "application/json"
         req = Request(base + path.lstrip("/"), data=data, headers=headers, method=method)
         try:
-            with urlopen(req, timeout=timeout) as resp:  # noqa: S310 (operator-supplied URL)
+            with opener.open(req, timeout=timeout) as resp:  # noqa: S310 (operator-supplied URL)
                 raw = resp.read()
                 status = resp.status
         except Exception as exc:  # HTTPError carries a status; anything else is a connection failure
@@ -84,7 +113,7 @@ def _check_answer(check: str, expected: str | None, body: dict) -> str | None:
     if check == "not_found":
         says = any(w in text.lower() for w in ("couldn't find", "could not find", "not found", "no information",
                                                "doesn't say", "does not say", "not in the"))
-        return None if says or not files else "answered from sources instead of saying it wasn't found"
+        return None if says else "did not say the answer wasn't found"
     if check == "refused":
         return None if body.get("route") == "refused" and not files else f"route {body.get('route')!r}, expected refused"
     if check.startswith("sql:"):

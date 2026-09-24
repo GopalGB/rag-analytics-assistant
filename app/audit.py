@@ -28,6 +28,17 @@ def _digest(entry: dict[str, Any]) -> str:
     return hashlib.sha256(json.dumps(body, sort_keys=True, default=str).encode("utf-8")).hexdigest()
 
 
+def _parse(line: str) -> dict[str, Any] | None:
+    """One log line as an entry, or None when it is not valid JSON or not shaped like an audit entry."""
+    try:
+        entry = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(entry, dict) or not all(isinstance(entry.get(k), str) for k in ("hash", "prev", "event", "ts")):
+        return None
+    return entry
+
+
 class AuditLog:
     def __init__(self, path: str | Path | None):
         self.path = Path(path) if path else None
@@ -71,10 +82,7 @@ class AuditLog:
         with self.path.open(encoding="utf-8") as fh:
             for line in fh:
                 if line.strip():
-                    try:
-                        out.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        out.append({"_unreadable": True})
+                    out.append(_parse(line) or {"_unreadable": True})
         return out
 
     def tail(self, limit: int = 100) -> list[dict[str, Any]]:
@@ -87,13 +95,8 @@ class AuditLog:
             for line in fh:
                 if line.strip():
                     buf.append(line)
-        out = []
-        for line in buf:
-            try:
-                out.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue  # verify() reports it; reading the log must not crash the app
-        return out
+        # a truncated or wrong-shaped line is skipped here (verify() reports it); reading must not crash the app
+        return [e for e in map(_parse, buf) if e is not None]
 
     def verify(self) -> dict[str, Any]:
         prev = GENESIS

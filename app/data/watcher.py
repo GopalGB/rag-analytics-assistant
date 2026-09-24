@@ -62,6 +62,9 @@ def reindex(
             "failed_tables": sorted(engine.store.failed_tables)}
 
 
+MAX_FAILED_RETRIES = 3  # full rebuilds for the same folder state while a spreadsheet stays unreadable
+
+
 async def run_watcher(
     reindex_fn: Callable[[], object], data_dir: str, interval_seconds: int, stop: asyncio.Event
 ) -> None:
@@ -70,8 +73,9 @@ async def run_watcher(
     The startup ingest has already run, so we seed the signature with the current state and only act
     on later changes. Reindexing runs in a worker thread so the event loop stays responsive, and the
     new signature is committed only after a successful rebuild — a file caught mid-write simply errors
-    this tick and is retried on the next one."""
+    this tick and is retried on the next one, up to MAX_FAILED_RETRIES times for the same folder state."""
     last_sig = dir_signature(data_dir)
+    retried: tuple[object, int] = (None, 0)  # (signature, failed attempts) for a spreadsheet that won't load
     while not stop.is_set():
         with contextlib.suppress(asyncio.TimeoutError):
             await asyncio.wait_for(stop.wait(), timeout=interval_seconds)
@@ -79,11 +83,20 @@ async def run_watcher(
             break
         try:
             sig = dir_signature(data_dir)
-            if sig != last_sig:
-                result = await asyncio.to_thread(reindex_fn)
-                if isinstance(result, dict) and result.get("failed_tables"):
-                    continue  # a spreadsheet couldn't be read yet: keep last_sig so the next tick retries
-                last_sig = sig
         except Exception:
-            # Transient (e.g. a file mid-copy). Leave last_sig unchanged so we retry next tick.
+            continue  # the folder is being changed right now: look again next tick
+        if sig == last_sig:
             continue
+        try:
+            result = await asyncio.to_thread(reindex_fn)
+            failed = isinstance(result, dict) and bool(result.get("failed_tables"))
+        except Exception:
+            failed = True  # transient (e.g. a file mid-copy)
+        if failed:
+            attempts = retried[1] + 1 if retried[0] == sig else 1
+            retried = (sig, attempts)
+            if attempts < MAX_FAILED_RETRIES:
+                continue  # keep last_sig so the next tick retries
+            # still failing: stop rebuilding every tick and wait for the folder to change again
+        retried = (None, 0)
+        last_sig = sig

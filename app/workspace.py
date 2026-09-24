@@ -218,7 +218,7 @@ class Workspace:
     def _known_vendors(self) -> list[str]:
         if "qbo_vendors" not in self.store.tables():
             return []
-        _, rows = self.store.run_select("SELECT name FROM qbo_vendors", max_rows=5000)
+        _, rows = self.store.run_select("SELECT name FROM qbo_vendors", max_rows=5000, internal=True)
         return [r[0] for r in rows if r[0]]
 
     def _reconcile(self) -> int:

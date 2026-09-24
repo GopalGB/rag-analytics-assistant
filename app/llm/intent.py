@@ -22,8 +22,12 @@ from typing import Any
 from app.llm.schemas import RouteDecision
 
 # "What needs my attention?" and similar: answered from the ranked attention list (tool or no-model fallback).
-PRIORITY_PATTERN = (r"\b(needs? (my |our )?attention|what should (i|we) (look at|focus on|do|prioriti[sz]e)|priorit\w*|"
-                    r"to-?do|month[- ]end|checklist|anything (urgent|wrong|odd)|red flags?)\b")
+# Only phrases that ask for *our* priorities: "the onboarding checklist" or "priority tasks in the project plan"
+# are questions about a document and must not be routed here.
+PRIORITY_PATTERN = (r"\b(needs? (my |our |any )?attention|what should (i|we) (look at|focus on|do|prioriti[sz]e|"
+                    r"worry about)|(my|our) (top |main |biggest )?(priorit(y|ies)|to-?dos?|to-?do list)|"
+                    r"month[- ]end (checklist|to-?dos?|tasks)|any(thing)? (urgent|wrong|odd|red flags?)|"
+                    r"what('s| is) (urgent|on fire))\b")
 
 _RULES: dict[str, list[tuple[str, float]]] = {
     "accounting": [
@@ -44,6 +48,7 @@ _RULES: dict[str, list[tuple[str, float]]] = {
     "documents": [
         (r"\b(agreement|contract|lease|policy|clause|terms?|notice|renew\w*|terminat\w*|liabilit\w*|insurance)\b", 1.5),
         (r"\b(project|task|milestone|risk|schedule|report|minutes|document|pdf|says?|mention\w*|according)\b", 1.0),
+        (r"\b(checklist|onboarding|handbook|guide|procedures?|steps)\b", 1.0),
         (r"\b(what does|who is|when does|where|explain|define|meaning)\b", 0.5),
         (r"\b(how long|retain|retention|keep (?:its |the |our )?(?:records?|receipts|documents)|guidance|rules?)\b", 1.5),
     ],

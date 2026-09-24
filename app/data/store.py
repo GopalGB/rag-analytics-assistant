@@ -37,6 +37,9 @@ _COMMENT_BLOCK = re.compile(r"/\*.*?\*/", re.S)
 _COMMENT_LINE = re.compile(r"--[^\n]*")
 
 
+USER_MAX_ROWS = 200  # rows a model or a person can pull out in one query
+INTERNAL_MAX_ROWS = 1_000_000  # app-written SQL (reconciliation, reports) must see every row
+
 class UnsafeQueryError(ValueError):
     """Raised when a query is not a single, safe, read-only SELECT over allowed tables."""
 
@@ -122,7 +125,10 @@ class DataStore:
         return int(count)
 
     # ---- safe querying -------------------------------------------------
-    def run_select(self, sql: str, max_rows: int = 200) -> tuple[list[str], list[tuple]]:
+    def run_select(self, sql: str, max_rows: int = 200, *, internal: bool = False) -> tuple[list[str], list[tuple]]:
+        """Validated, time-limited SELECT. Model- and user-written SQL is capped at USER_MAX_ROWS rows;
+        `internal=True` is only for SQL the app writes itself (reconciliation, reports), which must see every
+        row, so it gets INTERNAL_MAX_ROWS. The same validation and timeout apply either way."""
         cleaned = self._strip_comments(sql).strip().rstrip(";")
         if ";" in cleaned:
             raise UnsafeQueryError("multiple statements are not allowed")
@@ -141,7 +147,7 @@ class DataStore:
             raise UnsafeQueryError("unsupported table function (row generators are not allowed)")
         self._assert_tables_allowed(cleaned)
 
-        max_rows = max(1, min(int(max_rows), 200))
+        max_rows = max(1, min(int(max_rows), INTERNAL_MAX_ROWS if internal else USER_MAX_ROWS))
         wrapped = f"SELECT * FROM (\n{cleaned}\n) AS _capped LIMIT {max_rows}"
         with self._lock:
             timer = threading.Timer(self.query_timeout_seconds, self.con.interrupt)

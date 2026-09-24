@@ -45,23 +45,30 @@ def collect_query_errors() -> Iterator[list[str]]:
         QUERY_ERRORS.reset(token)
 
 
-def query(store: DataStore, sql: str, max_rows: int = 5000) -> list[dict[str, Any]]:
+def _report(message: str) -> None:
+    errors = QUERY_ERRORS.get()
+    if errors is not None:
+        errors.append(message)
+
+
+def query(store: DataStore, sql: str, max_rows: int = 100_000) -> list[dict[str, Any]]:
+    """Run app-written SQL. Errors and truncated results are reported, never passed off as complete figures."""
     try:
-        cols, rows = store.run_select(sql, max_rows=max_rows)
+        cols, rows = store.run_select(sql, max_rows=max_rows, internal=True)
     except Exception as exc:
         from app.observability import event
 
         message = f"{type(exc).__name__}: {str(exc)[:200]}"
         event("query_failed", logging.WARNING, error=message)
-        errors = QUERY_ERRORS.get()
-        if errors is not None:
-            errors.append(message)
+        _report(message)
         return []
+    if len(rows) >= max_rows:
+        _report(f"a result was cut off at {max_rows:,} rows, so totals from it may be incomplete")
     return [dict(zip(cols, r, strict=False)) for r in rows]
 
 
 def _q(store: DataStore, sql: str) -> list[dict[str, Any]]:
-    return query(store, sql, 5000)
+    return query(store, sql)
 
 
 def _bucket(days: int) -> str:

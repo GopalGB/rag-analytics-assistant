@@ -8,7 +8,7 @@ layouts (a 28-page PDF, a Word file with tables, long Markdown, a wide CSV). Ret
 |---|---|---|---|---|---|---|
 | `documents/public/public_irs_business_records.pdf` | PDF, 28 pages | Publication 583, Starting a Business and Keeping Records (Rev. Dec 2024) | US Internal Revenue Service | https://www.irs.gov/pub/irs-pdf/p583.pdf | Public domain (US federal government work, 17 U.S.C. 105) | 1,365,106 |
 | `documents/public/public_govuk_sample_invoice_installers.docx` | DOCX | Sample invoice for installers | UK Government (GOV.UK) | https://assets.publishing.service.gov.uk/media/652512baaea2d0000d219a72/Sample_invoice_for_installers_.docx | Open Government Licence v3.0 | 46,802 |
-| `documents/public/public_owasp_llm01_prompt_injection.md` | Markdown | LLM01:2025 Prompt Injection (OWASP Top 10 for LLM Applications) | OWASP Foundation | https://github.com/OWASP/www-project-top-10-for-large-language-model-applications/blob/main/2_0_vulns/LLM01_PromptInjection.md | CC BY-SA 4.0 | 10,555 |
+| `documents/public/public_owasp_llm01_prompt_injection.md` | Markdown | LLM01:2025 Prompt Injection (OWASP Top 10 for LLM Applications) | OWASP Foundation | https://github.com/OWASP/www-project-top-10-for-large-language-model-applications/blob/main/2_0_vulns/LLM01_PromptInjection.md | CC BY-SA 4.0 | 11,069 |
 | `tables/public_country_codes.csv` | CSV, 249 rows × 56 columns | Country codes (ISO 3166, ISO 4217 currency, dialling codes) | Frictionless Data / DataHub | https://github.com/datasets/country-codes | ODC PDDL / CC0 (public domain) | 134,003 |
 
 Paths are relative to `data/sample/`.
@@ -29,7 +29,8 @@ Paths are relative to `data/sample/`.
   of flagging instead of inventing.
 - The OWASP page contains example prompt-injection text. It is indexed as ordinary content: retrieved
   passages are treated as data, never as instructions, which makes it a useful live test of that rule.
-- OWASP content is CC BY-SA 4.0: keep this attribution when redistributing it.
+- OWASP content is CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/): keep this attribution when
+  redistributing it. The file carries the same attribution, license and modification notice in its header.
 
 ## More invoice layouts
 

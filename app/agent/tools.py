@@ -94,11 +94,27 @@ class ToolBox:
     def _attention(self, limit: int) -> dict[str, Any]:
         from app.accounting.insights import for_model
 
+        blocked = {"error": "blocked by privacy policy: the attention list includes accounting and bank data, which "
+                            "must stay on this machine. Say that this needs the local model."}
         if self.privacy and self.privacy.cloud and not self.privacy.policy.cloud_ok_for("accounting"):
-            return {"error": "blocked by privacy policy: the attention list includes accounting and bank data, which "
-                             "must stay on this machine. Say that this needs the local model."}
-        self.touched_classes.add("accounting")
-        return for_model(self.insights(), limit)
+            return blocked
+        result = self.insights()
+        # every item's own source must be allowed too (bank lines, invoice files, personal documents ...)
+        classes = {"accounting"}
+        for item in result["items"]:
+            src = item.get("source") or {}
+            if src.get("type") == "file":
+                classes.add(self.privacy.policy.classify_file(src.get("name", "")) if self.privacy else "documents")
+                allowed = not self.privacy or self.privacy.file_allowed(src.get("name", ""))
+            elif src.get("type") == "table":
+                classes.add(self.privacy.policy.classify_table(src.get("name", "")) if self.privacy else "accounting")
+                allowed = not self.privacy or self.privacy.table_allowed(src.get("name", ""))
+            else:
+                allowed = not (self.privacy and self.privacy.cloud)  # unknown source: fail closed for cloud models
+            if not allowed:
+                return blocked
+        self.touched_classes |= classes
+        return for_model(result, limit)
 
     def _log(self, name: str, result: dict[str, Any]) -> dict[str, Any]:
         self.calls.append({"tool": name, "ok": "error" not in result, "error": result.get("error")})
