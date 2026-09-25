@@ -71,6 +71,13 @@ class Settings(BaseSettings):
     llm_models_strong: str | None = None  # e.g. "anthropic:claude-sonnet-5,openai:gpt-4o,ollama:qwen2.5:32b"
     router_failure_threshold: int = 3  # consecutive failures before a model is skipped...
     router_cooldown_seconds: int = 60  # ...for this long (circuit breaker)
+    # When EVERY model is rate limited and the providers say how long to wait (free tiers: a few
+    # seconds), wait up to this long and try once more instead of failing. 0 disables the wait.
+    rate_limit_max_wait_seconds: float = 8.0
+    # Public demo only: reuse answers to repeated questions (the demo is stateless, so the same question
+    # gets the same answer). Optional seed file of pre-generated answers, used only if the corpus matches.
+    answer_cache_size: int = 256
+    answer_cache_seed: str | None = None
     llm_pricing: str | None = None  # JSON {"provider:model": [usd_per_M_input, usd_per_M_output]} for cost tracking
     intent_model_fallback: bool = True  # ask the fast model when keyword routing is unsure
 

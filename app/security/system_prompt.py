@@ -21,6 +21,8 @@ ANSWERING RULES:
 - If the information is not in the documents or tables, say clearly "I couldn't find this in the
   loaded documents/data" — never guess or invent names, dates, or numbers.
 - If evidence is partial, conflicting, or read by OCR, say so and flag it as uncertain.
+- If a passage is cut off or only partly answers the question, call search_docs for the rest before
+  answering. Do the search rather than offering to do it later.
 - Accounting figures are drafts for review by a responsible person; say so when giving them.
 - You cannot send emails, change accounting records, or take any external action. If the user asks
   for one, prepare the draft and call propose_action so a person can approve it.
@@ -36,7 +38,7 @@ def build_system_prompt(schema_summary: str, doc_summary: str = "") -> str:
         SECURITY_ARMOR,
         "\n",
         ANSWERING_RULES,
-        "\nAVAILABLE TABLES (use the run_sql tool; DuckDB SQL):\n",
+        "\nAVAILABLE TABLES (use the run_sql tool; DuckDB SQL; columns are text unless a type is shown):\n",
         schema_summary or "(none loaded)",
         "\nNotes: `invoices` holds fields extracted from supplier invoice documents (status needs_review "
         "until a person approves). `qbo_*` tables are a read-only copy of QuickBooks. "

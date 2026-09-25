@@ -85,14 +85,18 @@ class DataStore:
 
     def schema_summary(self, max_cols: int = 40) -> str:
         """Tables and columns for the model. Names that need quoting in DuckDB (hyphens, spaces,
-        capitals) are shown quoted; wide tables list every column, the ones past `max_cols` without types."""
+        capitals) are shown quoted; wide tables list every column, the ones past `max_cols` without types.
+        Text columns carry no type (the prompt says so): this summary is resent on every model turn."""
 
         def ident(name: str) -> str:
             return name if re.fullmatch(r"[a-z_][a-z0-9_]*", name) else '"' + name.replace('"', '""') + '"'
 
+        def typed(name: str, ctype: str) -> str:
+            return ident(name) if ctype == "VARCHAR" else f"{ident(name)} {ctype}"
+
         lines: list[str] = []
         for table, cols in self.schema().items():
-            col_text = ", ".join(f"{ident(name)} {ctype}" for name, ctype in cols[:max_cols])
+            col_text = ", ".join(typed(name, ctype) for name, ctype in cols[:max_cols])
             if len(cols) > max_cols:
                 col_text += "; more columns: " + ", ".join(ident(name) for name, _ in cols[max_cols:])
             lines.append(f'- "{table}"({col_text})')

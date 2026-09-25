@@ -10,6 +10,8 @@ Per call the router
 - filters the chain to LOCAL models when the privacy router says the data must stay on the machine;
 - skips models whose circuit breaker is open (N consecutive failures → cooled down for M seconds);
 - tries each candidate in order until one succeeds, recording latency, tokens and estimated cost;
+- if EVERY candidate was rate limited and the providers said when to retry, waits that long (up to
+  `rate_limit_max_wait` seconds) and makes one more pass, instead of failing a free-tier burst;
 - returns the result plus a trace (which models were tried, which answered, why others failed).
 """
 
@@ -93,6 +95,7 @@ class ModelRouter:
         cooldown_seconds: float = 60.0,
         pricing: dict[str, tuple[float, float]] | None = None,
         on_call: Callable[[CallRecord, str], Any] | None = None,
+        rate_limit_max_wait: float = 0.0,
     ):
         self.tiers = {t: list(tiers.get(t, [])) for t in TIERS}
         self.notes = notes or []
@@ -100,6 +103,8 @@ class ModelRouter:
         self.cooldown_seconds = cooldown_seconds
         self.pricing = pricing or {}
         self.on_call = on_call
+        self.rate_limit_max_wait = rate_limit_max_wait
+        self.sleep: Callable[[float], Any] = time.sleep
         self._stats: dict[str, _Stats] = {}
         self._lock = threading.Lock()
 
@@ -180,23 +185,32 @@ class ModelRouter:
         cands = self.candidates(tier, local_only)
         if not cands:
             raise NoModelAvailable("no local AI model is available" if local_only else "no AI model is configured")
-        for llm in cands:
-            t0 = time.perf_counter()
-            with usage.capture() as u:
-                try:
-                    result = fn(llm)
-                except Exception as exc:  # any failure → next model
-                    rec = self._record(llm, False, int((time.perf_counter() - t0) * 1000), u,
-                                       f"{type(exc).__name__}: {str(exc)[:200]}")
-                    trace.attempts.append(rec)
-                    if self.on_call:
-                        self.on_call(rec, purpose)
-                    continue
-            rec = self._record(llm, True, int((time.perf_counter() - t0) * 1000), u, None)
-            trace.attempts.append(rec)
-            if self.on_call:
-                self.on_call(rec, purpose)
-            return result, trace
+        waited = False
+        while True:
+            waits: list[float | None] = []
+            for llm in cands:
+                t0 = time.perf_counter()
+                with usage.capture() as u:
+                    try:
+                        result = fn(llm)
+                    except Exception as exc:  # any failure → next model
+                        rec = self._record(llm, False, int((time.perf_counter() - t0) * 1000), u,
+                                           f"{type(exc).__name__}: {str(exc)[:200]}")
+                        trace.attempts.append(rec)
+                        if self.on_call:
+                            self.on_call(rec, purpose)
+                        waits.append(getattr(exc, "retry_after", None) if getattr(exc, "status", None) == 429 else None)
+                        continue
+                rec = self._record(llm, True, int((time.perf_counter() - t0) * 1000), u, None)
+                trace.attempts.append(rec)
+                if self.on_call:
+                    self.on_call(rec, purpose)
+                return result, trace
+            wait = min(waits) if waits and None not in waits else None
+            if waited or wait is None or wait > self.rate_limit_max_wait:
+                break
+            self.sleep(wait)  # every model is briefly rate limited: wait as asked, then one more pass
+            waited = True
         raise NoModelAvailable(f"all {len(cands)} candidate model(s) failed", trace.attempts)
 
     def bound(self, tier: str, local_only: bool = False, purpose: str = "task") -> RoutedLLM | None:

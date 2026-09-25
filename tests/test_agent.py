@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from app.agent.engine import AgentEngine
 from app.agent.memory import ConversationMemory
+from app.data import ingest
+from app.rag.embeddings import EmbeddingService
+from app.rag.retriever import Retriever
 from app.security import InputGuard
 
 
@@ -105,6 +108,66 @@ def test_prefetched_passages_reach_the_model_and_cited_ones_become_sources(store
     out = _engine(store, retriever, Reader()).answer("s6", "What does baseline mean?")
     assert "PRE-FETCHED PASSAGES" in seen["system"] and "Baseline means expected units" in seen["system"]
     assert [s["file"] for s in out["sources"]] == ["guide.md"]
+
+
+def test_only_on_topic_passages_are_prefetched(tmp_path, store):
+    """Every model turn resends the system prompt: off-topic passages stay out, the best hit always rides."""
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "guide.md").write_text("Baseline means expected units sold. Lift is the extra units from a promotion.")
+    (docs / "lease.md").write_text("The office lease expires on 31 March 2027. Renewal needs 90 days written notice.")
+    (docs / "fees.md").write_text("The monthly maintenance fee is 450 AED, invoiced in advance.")
+    retriever = Retriever(EmbeddingService(provider="local", dim=128)).build(ingest.load_chunks(str(docs)))
+    seen = []
+
+    class Reader:
+        name, is_local = "reader", True
+
+        def converse(self, system, history, question, toolbox, max_iters):
+            seen.append(system.split("PRE-FETCHED PASSAGES", 1)[-1] if "PRE-FETCHED" in system else "")
+            return "Noted [lease.md]."
+
+    engine = _engine(store, retriever, Reader())
+    engine.answer("s8", "When does the office lease expire?")
+    assert "lease.md" in seen[0] and "fees.md" not in seen[0] and "guide.md" not in seen[0]
+    engine.answer("s9", "What was the promotion lift for the North region?")
+    assert seen[1].count("<passage ") == 1  # nothing matches well: only the top hit
+
+
+def _searching_engine(tmp_path, store, answer):
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "lease.md").write_text("The office lease expires on 31 March 2027. Renewal needs 90 days notice.")
+    (docs / "fees.md").write_text("The monthly maintenance fee is 450 AED, invoiced in advance.")
+    (docs / "owasp.md").write_text("Prompt injection lease attacks: an attacker hides instructions in content.")
+    retriever = Retriever(EmbeddingService(provider="local", dim=128)).build(ingest.load_chunks(str(docs)))
+
+    class Searcher:
+        name, is_local = "searcher", True
+
+        def converse(self, system, history, question, toolbox, max_iters):
+            toolbox.run("search_docs", {"query": "lease notice fee", "k": 3})
+            return answer
+
+    return _engine(store, retriever, Searcher())
+
+
+def test_sources_are_only_what_the_answer_used(tmp_path, store):
+    out = _searching_engine(tmp_path, store, "The lease expires on 31 March 2027 [lease.md].").answer(
+        "s10", "When does the office lease expire?")
+    assert [s["file"] for s in out["sources"]] == ["lease.md"]
+    assert out["checks"] == {"citations": 1, "unverified_citations": []}
+
+
+def test_not_found_answer_lists_no_searched_sources(tmp_path, store):
+    out = _searching_engine(tmp_path, store, "I couldn't find this in the loaded documents/data.").answer(
+        "s11", "Who is our auditor?")
+    assert out["sources"] == []
+
+
+def test_schema_summary_types_only_non_text_columns(store):
+    summary = store.schema_summary()
+    assert "region," in summary and "revenue BIGINT" in summary and "VARCHAR" not in summary
 
 
 def test_not_found_answer_gets_no_padded_sources(store, retriever):

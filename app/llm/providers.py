@@ -32,6 +32,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlparse
@@ -42,10 +43,32 @@ from app.llm import usage
 class LLMError(RuntimeError):
     """A provider call failed. `retryable` = worth trying the next model."""
 
-    def __init__(self, message: str, status: int | None = None, retryable: bool = True):
+    def __init__(self, message: str, status: int | None = None, retryable: bool = True,
+                 retry_after: float | None = None):
         super().__init__(message)
         self.status = status
         self.retryable = retryable
+        self.retry_after = retry_after  # seconds the provider asked us to wait (rate limits), if it said
+
+
+_WAIT_HINT = re.compile(r"try again in\s+(?:(\d+)m)?(\d+(?:\.\d+)?)(ms|s)\b", re.I)
+
+
+def retry_after_seconds(headers: Any, body: str) -> float | None:
+    """How long a rate-limited provider asked us to wait: the Retry-After header, else a hint in the
+    error text ("Please try again in 1m26.4s" / "in 850ms"). None when neither is present."""
+    try:
+        value = (headers or {}).get("retry-after") or (headers or {}).get("Retry-After")
+        if value is not None:
+            return float(value)
+    except (TypeError, ValueError):
+        pass
+    match = _WAIT_HINT.search(body or "")
+    if not match:
+        return None
+    minutes, amount, unit = match.groups()
+    seconds = float(amount) / 1000 if unit.lower() == "ms" else float(amount)
+    return round(seconds + 60 * int(minutes or 0), 3)
 
 
 class BaseLLM(Protocol):
@@ -154,7 +177,8 @@ def _http_error(resp: Any, provider: str) -> LLMError:
         detail = (getattr(resp, "text", "") or "")[:300]
     kind = {401: "authentication failed (check the API key)", 403: "permission denied", 404: "model or endpoint not found",
             429: "rate limited / quota exceeded"}.get(status, "request failed")
-    return LLMError(f"{provider}: {kind} (HTTP {status}) {detail}", status=status)
+    wait = retry_after_seconds(getattr(resp, "headers", None), getattr(resp, "text", "") or detail) if status == 429 else None
+    return LLMError(f"{provider}: {kind} (HTTP {status}) {detail}", status=status, retry_after=wait)
 
 
 # --------------------------------------------------------------------------- OpenAI-compatible
@@ -183,6 +207,10 @@ class OpenAICompatLLM:
         self.is_local = is_local_url(self.base_url) if is_local is None else is_local
         self.name = f"{provider}:{model}"
         self._http = http
+        # A tool turn that trips a per-minute cap is retried in place (the workspace sets the cap), so the
+        # turns already answered are not re-sent from scratch by a restart or a fallback model.
+        self.rate_limit_wait = 0.0
+        self.sleep = time.sleep
 
     @property
     def http(self):
@@ -201,11 +229,22 @@ class OpenAICompatLLM:
             h["Authorization"] = f"Bearer {self.api_key}"
         return h
 
+    def _post(self, body: dict[str, Any], stream: bool = False) -> Any:
+        """POST once; on a 429 that frees up within `rate_limit_wait` seconds, wait and POST once more."""
+        kwargs: dict[str, Any] = {"stream": True} if stream else {}
+        resp = self.http.post(self._url(), headers=self._headers(), json=body, timeout=self.timeout, **kwargs)
+        if resp.status_code == 429:
+            wait = retry_after_seconds(getattr(resp, "headers", None), getattr(resp, "text", "") or "")
+            if wait is not None and 0 < self.rate_limit_wait and wait <= self.rate_limit_wait:
+                self.sleep(wait)
+                resp = self.http.post(self._url(), headers=self._headers(), json=body, timeout=self.timeout, **kwargs)
+        return resp
+
     def _call(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None, **extra: Any) -> dict[str, Any]:
         body: dict[str, Any] = {"model": self.model, "messages": messages, "temperature": 0.1, **extra}
         if tools:
             body["tools"] = tools
-        resp = self.http.post(self._url(), headers=self._headers(), json=body, timeout=self.timeout)
+        resp = self._post(body)
         if resp.status_code >= 400:
             raise _http_error(resp, self.provider)
         data = resp.json()
@@ -219,10 +258,10 @@ class OpenAICompatLLM:
                                 "stream_options": {"include_usage": True}}
         if tools:
             body["tools"] = tools
-        resp = self.http.post(self._url(), headers=self._headers(), json=body, timeout=self.timeout, stream=True)
+        resp = self._post(body, stream=True)
         if resp.status_code == 400:  # some servers reject stream_options
             body.pop("stream_options")
-            resp = self.http.post(self._url(), headers=self._headers(), json=body, timeout=self.timeout, stream=True)
+            resp = self._post(body, stream=True)
         if resp.status_code >= 400:
             raise _http_error(resp, self.provider)
         content: list[str] = []

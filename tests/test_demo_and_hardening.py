@@ -278,3 +278,14 @@ def test_record_retention_questions_route_to_documents():
 
     plan = IntentRouter(model_fallback=False).plan("How long should a business keep employment tax records?")
     assert plan.intent == "documents" and plan.method == "rules"
+
+
+def test_applying_the_approval_policy_to_invoices_routes_to_accounting():
+    """Answering it needs invoice amounts (SQL / attention list), not just the policy text."""
+    from app.llm.intent import IntentRouter
+
+    router = IntentRouter(model_fallback=False)
+    for q in ("Which invoices need director approval under our policy?",
+              "Do any bills need board approval?"):
+        assert router.plan(q).intent == "accounting", q
+    assert router.plan("What does the approval policy say about director sign-off?").intent == "documents"

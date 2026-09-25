@@ -57,6 +57,9 @@ class ToolBox:
         self.columns: list[str] = []
         self.rows: list[tuple] = []
         self.sources: list[dict[str, Any]] = []
+        # Passages the model already has (pre-fetched into the prompt or returned earlier): a repeat search
+        # references them instead of re-sending the text, since every tool turn resends the conversation.
+        self.shown: set[tuple[str, Any]] = set()
         self.actions: list[dict[str, Any]] = []
         self.calls: list[dict[str, Any]] = []  # tool-call log for the trace
         self.listener: Any = None  # optional callback(kind, data) for live progress (streaming)
@@ -150,16 +153,26 @@ class ToolBox:
     def _search_docs(self, query: str, k: int) -> dict[str, Any]:
         hits = self.retriever.search(query, k=k)
         results = []
+        repeats = 0
         for h in hits:
             if self.privacy and not self.privacy.file_allowed(h.file):
                 self.privacy.withheld += 1
                 continue
             self.add_source(h)
-            text = self.privacy.outgoing(h.text) if self.privacy else h.text
+            if (h.file, h.chunk_id) in self.shown:
+                repeats += 1
+                text = "(already shown above)"
+            else:
+                self.shown.add((h.file, h.chunk_id))
+                text = self.privacy.outgoing(h.text) if self.privacy else h.text
             results.append({"source": cite(h.file, h.page), "file": h.file, "page": h.page, "score": h.score, "text": text})
         out: dict[str, Any] = {"results": results}
+        if repeats:
+            out["note"] = (f"{repeats} passage(s) were already shown above: answer from them, or search with "
+                           "different words.")
         if len(results) < len(hits):
-            out["note"] = f"{len(hits) - len(results)} passage(s) withheld: that data must stay on this machine."
+            withheld = f"{len(hits) - len(results)} passage(s) withheld: that data must stay on this machine."
+            out["note"] = f"{out['note']} {withheld}" if "note" in out else withheld
         return out
 
     def _touch_tables(self, sql: str) -> None:

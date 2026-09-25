@@ -12,6 +12,38 @@ from app.data.store import DataStore
 from app.rag.embeddings import EmbeddingService
 from app.rag.retriever import Retriever
 
+_PROVIDER_ENV = (
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "OPENAI_MODEL",
+    "GEMINI_API_KEY",
+    "OPENROUTER_API_KEY",
+    "GROQ_API_KEY",
+    "MISTRAL_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "TOGETHER_API_KEY",
+    "XAI_API_KEY",
+    "AZURE_OPENAI_API_KEY",
+    "AZURE_OPENAI_ENDPOINT",
+    "BEDROCK_MODEL_ID",
+    "LLM_CLI_COMMAND",
+    "LLM_PROVIDER",
+    "LLM_MODELS_STRONG",
+    "LLM_MODELS_FAST",
+    "ALLOW_CLOUD_AI",
+    "EMBEDDING_API_KEY",
+    "PUBLIC_DEMO",
+    "APP_API_KEY",
+)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_provider_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep a developer's shell (provider keys, routing overrides) from changing test outcomes."""
+    for name in _PROVIDER_ENV:
+        monkeypatch.delenv(name, raising=False)
+
 
 @pytest.fixture
 def data_dir(tmp_path: Path) -> Path:

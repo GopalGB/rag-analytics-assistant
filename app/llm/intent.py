@@ -37,6 +37,9 @@ _RULES: dict[str, list[tuple[str, float]]] = {
         (r"\b(how (much|many)|total|sum|average|count|top \d+|by (supplier|vendor|customer|month))\b", 1.0),
         (r"\b(mismatch\w*|discrepanc\w*|duplicates?|missing from|not recorded)\b", 1.5),
         (r"\binvoices?\b", 0.5),
+        # Applying the approval policy to actual invoices/bills needs their amounts, not just the policy text.
+        (r"\b(invoices?|bills?|payments?|expenses?)\b.{0,40}\b(need|needs|require|requires|required)\b.{0,30}"
+         r"\bapprov\w*", 2.5),
         (PRIORITY_PATTERN, 2.5),
     ],
     "drafting": [

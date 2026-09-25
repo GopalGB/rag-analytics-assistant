@@ -9,7 +9,7 @@ from dataclasses import dataclass
 _local = threading.local()
 
 
-@dataclass
+@dataclass(eq=False)  # captures are unwound by identity; equal counts must not collide
 class Usage:
     input_tokens: int = 0
     output_tokens: int = 0

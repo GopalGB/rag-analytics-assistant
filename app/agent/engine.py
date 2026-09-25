@@ -49,6 +49,17 @@ def _relevant(question: str, text: str) -> bool:
     return hits >= (1 if len(terms) == 1 else math.ceil(0.6 * len(terms)))
 
 
+def _used_sources(text: str, question: str, sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The sources an answer actually used: the ones it cites; with no citation, at most two clearly on-topic
+    ones; none when it says the answer wasn't found. search_docs records every hit it returns, so without
+    this a "not found" answer would still list everything the model looked at."""
+    low = text.lower()
+    cited = [s for s in sources if s["cite"].lower() in low or s["file"].rsplit("/", 1)[-1].lower() in low]
+    if cited or _says_not_found(text):
+        return cited
+    return [s for s in sources if _relevant(question, s["snippet"])][:2]
+
+
 def _says_not_found(text: str) -> bool:
     return bool(re.search(r"couldn.?t find|could not find|not (?:in|found in) the (?:loaded )?(?:documents|data)", text, re.I))
 
@@ -76,9 +87,11 @@ class AgentEngine:
         intents: IntentRouter | None = None,
         privacy: PrivacyRouter | None = None,
         insights: Callable[[], dict[str, Any]] | None = None,
+        answer_cache: Any = None,
     ):
         self.store = store
         self.insights = insights
+        self.answer_cache = answer_cache  # public demo only (stateless): reuse answers to repeated questions
         self.retriever = retriever
         self.guard = guard
         self.router = router or ModelRouter.single(llm)
@@ -105,6 +118,7 @@ class AgentEngine:
             "tables": self.store.tables(),
             "documents": len(self.documents),
             "doc_chunks": len(self.retriever.chunks),
+            "answers_cached": None if self.answer_cache is None else len(self.answer_cache),
         }
 
     # ---- entry point -------------------------------------------------------------
@@ -118,6 +132,13 @@ class AgentEngine:
             self.on_event("chat.refused", actor=actor, category=decision.category, input_hash=decision.input_hash)
             return {"text": decision.user_message, "route": "refused", "category": decision.category, "sql": None,
                     "sources": []}
+
+        if self.answer_cache is not None and (hit := self.answer_cache.get(question)) is not None:
+            emit("route", {**(hit.get("routing") or {}), "cached": True})  # the "done" payload carries the text
+            self.on_event("chat.answered", actor=actor, route=hit["route"], question=question[:500], cached=True,
+                          model=(hit.get("routing") or {}).get("model"),
+                          sources=[s.get("cite") for s in hit.get("sources", [])][:8])
+            return hit
 
         local_only_turn = True
         if not self.router.available:
@@ -159,6 +180,8 @@ class AgentEngine:
             sources=[s["cite"] for s in payload.get("sources", [])][:8],
             sql=payload.get("sql"),
         )
+        if self.answer_cache is not None:
+            self.answer_cache.put(question, payload)
         return payload
 
     # ---- "what needs attention?" without a model: the ranked list, straight from the data ---------------
@@ -258,6 +281,9 @@ class AgentEngine:
         emit = sink or (lambda *_a, **_k: None)
         plan = self.intents.plan(question, classify=self._classifier(question))
         prefetched = self.retriever.search(question, k=self.prefetch_passages) if (plan.prefetch and self.prefetch_passages) else []
+        # The system prompt is resent on every tool turn, so only on-topic passages ride along; when none
+        # match, the single best hit still does (the model can call search_docs for more).
+        prefetched = [h for h in prefetched if _relevant(question, h.text)] or prefetched[:1]
         decision = self.privacy.decide(question, plan.data_classes, prefetched, has_local=self.router.has_local())
         emit("route", {**plan.to_dict(), "local_only": decision.local_only, "privacy_reasons": decision.reasons})
         if not self.router.candidates(plan.tier, decision.local_only):
@@ -283,6 +309,7 @@ class AgentEngine:
                 system += f"\n\nTASK ({plan.intent}): {plan.instructions}"
             visible = [h for h in prefetched if guard.file_allowed(h.file)]
             guard.withheld += len(prefetched) - len(visible)
+            toolbox.shown = {(h.file, h.chunk_id) for h in visible}  # this attempt's model sees them in the prompt
             if visible:
                 blocks = "\n\n".join(
                     f"<passage source=\"{cite(h.file, h.page)}\">\n{guard.outgoing(h.text)}\n</passage>" for h in visible
@@ -325,6 +352,7 @@ class AgentEngine:
             except Exception:
                 tables = set()
         checks = self._check_citations(final_text, toolbox, [h.file for h in visible], tables)
+        toolbox.sources = _used_sources(final_text, question, toolbox.sources)
 
         pol = self.privacy.policy
         # Every class the turn actually read (all SQL statements and returned passages, not just the last

@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from app.accounting import analytics, bank, insights, qbo_sync, reconcile, reports
+from app.agent.answer_cache import AnswerCache
 from app.agent.engine import AgentEngine
 from app.agent.memory import ConversationMemory
 from app.approvals import ApprovalQueue
@@ -47,6 +48,14 @@ UPLOAD_SUFFIXES = DOC_SUFFIXES | {".csv", ".xlsx"}
 
 class LLMNotConfiguredError(RuntimeError):
     """Raised at startup when require_llm is set but no provider is available."""
+
+
+def _project_path(value: str | None) -> Path | None:
+    """A configured path; relative ones are resolved against the project root (not the process's cwd)."""
+    if not value:
+        return None
+    path = Path(value)
+    return path if path.is_absolute() else Path(__file__).resolve().parent.parent / path
 
 
 class Workspace:
@@ -94,6 +103,8 @@ class Workspace:
             on_event=self.audit.record,
             prefetch_passages=settings.prefetch_passages,
             insights=self.attention,
+            answer_cache=AnswerCache.from_seed(_project_path(settings.answer_cache_seed), settings.data_dir,
+                                               settings.answer_cache_size) if settings.public_demo else None,
         )
         self.qbo = self._build_qbo()
         self.audit.record(
@@ -136,11 +147,15 @@ class Workspace:
         s = self.settings
         fast, notes_fast = build_chain(s, "fast")
         strong, notes_strong = build_chain(s, "strong")
+        for model in {id(m): m for m in fast + strong}.values():
+            if hasattr(model, "rate_limit_wait"):
+                model.rate_limit_wait = s.rate_limit_max_wait_seconds
         return ModelRouter(
             {"fast": fast, "strong": strong},
             notes=list(dict.fromkeys(notes_fast + notes_strong)),
             failure_threshold=s.router_failure_threshold,
             cooldown_seconds=s.router_cooldown_seconds,
+            rate_limit_max_wait=s.rate_limit_max_wait_seconds,
             pricing=parse_pricing(s.llm_pricing),
             on_call=record_model_call,
         )
