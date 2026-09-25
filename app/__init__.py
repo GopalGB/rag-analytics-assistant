@@ -1,3 +1,3 @@
-"""RAG Analytics Assistant — an LLM-first, guardrailed question-answering tool over your own tabular data and documents."""
+"""Private AI Assistant."""
 
-__version__ = "0.1.0"
+__version__ = "0.3.0"

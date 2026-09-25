@@ -8,9 +8,25 @@ from collections import Counter
 
 _TOKEN = re.compile(r"[a-z0-9]+")
 
+STOPWORDS = frozenset(
+    """a about after all also am an and any are as at be been before being between both but by can could
+    did do does doing for from had has have having he her here hers him his how i if in into is it its
+    me more most my no nor not of off on once only or other our ours out over own same she should so
+    some such than that the their them then there these they this those through to too under until up
+    very was we were what when where which while who whom why will with would you your yours
+    much many need needed please tell give show find list know get""".split()
+)
+
 
 def tokenize(text: str) -> list[str]:
     return _TOKEN.findall(text.lower())
+
+
+def content_terms(text: str) -> list[str]:
+    """Tokens minus stopwords (falls back to all tokens if the text is only stopwords)."""
+    toks = tokenize(text)
+    kept = [t for t in toks if t not in STOPWORDS]
+    return kept or toks
 
 
 class BM25:
@@ -37,7 +53,7 @@ class BM25:
         return self
 
     def search(self, query: str, k: int = 5) -> list[tuple[int, float]]:
-        q = tokenize(query)
+        q = content_terms(query)
         scores: list[tuple[int, float]] = []
         for idx, doc in enumerate(self.docs):
             if not doc:

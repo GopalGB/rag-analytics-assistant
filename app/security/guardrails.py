@@ -8,17 +8,17 @@ from dataclasses import dataclass
 from app.security import patterns
 
 _REFUSALS = {
-    "injection": "I can only help with analytics over the loaded data. I can't change my role or instructions.",
-    "exfiltration": "I can't share configuration, credentials, or internal instructions. Ask me about the data instead.",
-    "code_request": "I answer data questions — I don't write general code or free-form content.",
+    "injection": "I can only help with your documents, invoices and accounting data. I can't change my role or instructions.",
+    "exfiltration": "I can't share configuration, credentials, or internal instructions. Ask me about your documents or data instead.",
+    "code_request": "I help with your business documents and data. I don't write general code or creative content.",
     "unsafe_sql": "I only run safe, read-only lookups. Tell me what you'd like to know and I'll query it.",
     "format_hijack": "I'll keep my normal answer format. What would you like to know about the data?",
     "too_long": "That question is too long. Please shorten it.",
-    "out_of_scope": "That looks outside the loaded data. Ask me about the available tables or documents.",
+    "out_of_scope": "That looks outside the loaded data. Ask me about your documents, invoices or accounts.",
 }
 
 GREETING_REPLY = (
-    "Hi! Ask me a question about the loaded data or documents and I'll dig in."
+    "Hi! Ask me about your documents, invoices or QuickBooks data and I'll answer with sources."
 )
 
 

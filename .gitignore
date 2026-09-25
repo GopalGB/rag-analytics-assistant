@@ -10,12 +10,37 @@ venv/
 .ruff_cache/
 .mypy_cache/
 
-# Local secrets & state
+# Local secrets & state (database, caches, reviews, approvals, activity log, OAuth tokens)
 .env
-storage/*.duckdb
-storage/*.duckdb.wal
-storage/*.log
-storage/*.jsonl
+.env.*
+!env.example
+*.env
+!deploy/*.env.example
+*.pem
+*.key
+*.p12
+credentials*.json
+.dev.vars
+.vercel/
+.wrangler/
+storage/
+evaluation.json
+
+# Files uploaded through the UI during demos
+data/sample/uploads/
 
 # OS
 .DS_Store
+
+# Backups (may contain documents and, with --include-env, API keys)
+backups/
+.gstack/
+
+# Local agent and tooling state (never shipped)
+.planning/
+.claude/
+.gstack/
+logs/
+codedb.snapshot
+.coverage
+.playwright-mcp/

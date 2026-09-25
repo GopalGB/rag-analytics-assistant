@@ -1,0 +1,395 @@
+{
+  "CompanyInfo": [
+    {
+      "Id": "1",
+      "CompanyName": "Sandbox Company (fictional test data)",
+      "Country": "US",
+      "FiscalYearStartMonth": "January"
+    }
+  ],
+  "Vendor": [
+    {
+      "Id": "50",
+      "DisplayName": "Summit Ridge Electrical Supply LLC",
+      "Active": true,
+      "Balance": 0.0
+    },
+    {
+      "Id": "51",
+      "DisplayName": "Greenleaf Grounds Care Co.",
+      "Active": true,
+      "Balance": 0.0
+    },
+    {
+      "Id": "52",
+      "DisplayName": "Coastal Plumbing & Heating Ltd",
+      "Active": true,
+      "Balance": 0.0
+    },
+    {
+      "Id": "53",
+      "DisplayName": "Pioneer Concrete Works",
+      "Active": true,
+      "Balance": 0.0
+    },
+    {
+      "Id": "54",
+      "DisplayName": "Allied Fuel Cards",
+      "Active": true,
+      "Balance": 0.0
+    },
+    {
+      "Id": "55",
+      "DisplayName": "Harbor Waste Services",
+      "Active": true,
+      "Balance": 0.0
+    },
+    {
+      "Id": "56",
+      "DisplayName": "Northgate Security Systems",
+      "Active": true,
+      "Balance": 0.0
+    },
+    {
+      "Id": "57",
+      "DisplayName": "Lakeside Catering",
+      "Active": true,
+      "Balance": 0.0
+    },
+    {
+      "Id": "58",
+      "DisplayName": "Metro Office Solutions Inc",
+      "Active": true,
+      "Balance": 0.0
+    }
+  ],
+  "Customer": [
+    {
+      "Id": "10",
+      "DisplayName": "Cobalt Dental Clinic",
+      "Active": true,
+      "Balance": 0.0
+    },
+    {
+      "Id": "11",
+      "DisplayName": "Oakridge Accounting Partners",
+      "Active": true,
+      "Balance": 0.0
+    },
+    {
+      "Id": "12",
+      "DisplayName": "Juniper Yoga Studio",
+      "Active": true,
+      "Balance": 0.0
+    }
+  ],
+  "Bill": [
+    {
+      "Id": "101",
+      "SyncToken": "0",
+      "TxnDate": "2026-05-04",
+      "DueDate": "2026-06-03",
+      "TotalAmt": 4871.25,
+      "Balance": 0,
+      "CurrencyRef": {
+        "value": "USD",
+        "name": "United States Dollar"
+      },
+      "VendorRef": {
+        "value": "50",
+        "name": "Summit Ridge Electrical Supply LLC"
+      },
+      "APAccountRef": {
+        "value": "33",
+        "name": "Accounts Payable (A/P)"
+      },
+      "DocNumber": "INV-10421"
+    },
+    {
+      "Id": "102",
+      "SyncToken": "0",
+      "TxnDate": "2026-05-12",
+      "DueDate": "2026-06-11",
+      "TotalAmt": 1250.0,
+      "Balance": 1250.0,
+      "CurrencyRef": {
+        "value": "USD",
+        "name": "United States Dollar"
+      },
+      "VendorRef": {
+        "value": "51",
+        "name": "Greenleaf Grounds Care Co."
+      },
+      "APAccountRef": {
+        "value": "33",
+        "name": "Accounts Payable (A/P)"
+      },
+      "DocNumber": "GL-2291"
+    },
+    {
+      "Id": "103",
+      "SyncToken": "0",
+      "TxnDate": "2026-05-18",
+      "DueDate": "2026-06-17",
+      "TotalAmt": 2130.0,
+      "Balance": 2130.0,
+      "CurrencyRef": {
+        "value": "USD",
+        "name": "United States Dollar"
+      },
+      "VendorRef": {
+        "value": "52",
+        "name": "Coastal Plumbing & Heating Ltd"
+      },
+      "APAccountRef": {
+        "value": "33",
+        "name": "Accounts Payable (A/P)"
+      },
+      "DocNumber": "5530"
+    },
+    {
+      "Id": "104",
+      "SyncToken": "0",
+      "TxnDate": "2026-06-02",
+      "DueDate": "2026-07-02",
+      "TotalAmt": 12990.0,
+      "Balance": 12990.0,
+      "CurrencyRef": {
+        "value": "USD",
+        "name": "United States Dollar"
+      },
+      "VendorRef": {
+        "value": "53",
+        "name": "Pioneer Concrete Works"
+      },
+      "APAccountRef": {
+        "value": "33",
+        "name": "Accounts Payable (A/P)"
+      },
+      "DocNumber": "PCW-0192"
+    },
+    {
+      "Id": "105",
+      "SyncToken": "0",
+      "TxnDate": "2026-05-20",
+      "DueDate": "2026-06-19",
+      "TotalAmt": 940.0,
+      "Balance": 0,
+      "CurrencyRef": {
+        "value": "USD",
+        "name": "United States Dollar"
+      },
+      "VendorRef": {
+        "value": "54",
+        "name": "Allied Fuel Cards"
+      },
+      "APAccountRef": {
+        "value": "33",
+        "name": "Accounts Payable (A/P)"
+      },
+      "DocNumber": "AFC-3302"
+    },
+    {
+      "Id": "106",
+      "SyncToken": "0",
+      "TxnDate": "2026-05-28",
+      "DueDate": "2026-06-27",
+      "TotalAmt": 415.0,
+      "Balance": 0,
+      "CurrencyRef": {
+        "value": "USD",
+        "name": "United States Dollar"
+      },
+      "VendorRef": {
+        "value": "55",
+        "name": "Harbor Waste Services"
+      },
+      "APAccountRef": {
+        "value": "33",
+        "name": "Accounts Payable (A/P)"
+      }
+    },
+    {
+      "Id": "107",
+      "SyncToken": "0",
+      "TxnDate": "2026-06-21",
+      "DueDate": "2026-07-21",
+      "TotalAmt": 3105.75,
+      "Balance": 3105.75,
+      "CurrencyRef": {
+        "value": "USD",
+        "name": "United States Dollar"
+      },
+      "VendorRef": {
+        "value": "56",
+        "name": "Northgate Security Systems"
+      },
+      "APAccountRef": {
+        "value": "33",
+        "name": "Accounts Payable (A/P)"
+      },
+      "DocNumber": "NSS/2026/044"
+    },
+    {
+      "Id": "108",
+      "SyncToken": "0",
+      "TxnDate": "2026-06-30",
+      "DueDate": "2026-07-14",
+      "TotalAmt": 1187.6,
+      "Balance": 1187.6,
+      "CurrencyRef": {
+        "value": "USD",
+        "name": "United States Dollar"
+      },
+      "VendorRef": {
+        "value": "57",
+        "name": "Lakeside Catering"
+      },
+      "APAccountRef": {
+        "value": "33",
+        "name": "Accounts Payable (A/P)"
+      },
+      "DocNumber": "LC-3390"
+    }
+  ],
+  "Invoice": [
+    {
+      "Id": "201",
+      "DocNumber": "1001",
+      "TxnDate": "2026-05-01",
+      "DueDate": "2026-05-01",
+      "TotalAmt": 8500.0,
+      "Balance": 0,
+      "CustomerRef": {
+        "value": "10",
+        "name": "Cobalt Dental Clinic"
+      },
+      "CurrencyRef": {
+        "value": "USD",
+        "name": "United States Dollar"
+      }
+    },
+    {
+      "Id": "202",
+      "DocNumber": "1002",
+      "TxnDate": "2026-05-01",
+      "DueDate": "2026-06-01",
+      "TotalAmt": 6200.0,
+      "Balance": 6200.0,
+      "CustomerRef": {
+        "value": "11",
+        "name": "Oakridge Accounting Partners"
+      },
+      "CurrencyRef": {
+        "value": "USD",
+        "name": "United States Dollar"
+      }
+    },
+    {
+      "Id": "203",
+      "DocNumber": "1003",
+      "TxnDate": "2026-05-01",
+      "DueDate": "2026-05-31",
+      "TotalAmt": 3400.0,
+      "Balance": 1700.0,
+      "CustomerRef": {
+        "value": "12",
+        "name": "Juniper Yoga Studio"
+      },
+      "CurrencyRef": {
+        "value": "USD",
+        "name": "United States Dollar"
+      }
+    },
+    {
+      "Id": "204",
+      "DocNumber": "1004",
+      "TxnDate": "2026-06-01",
+      "DueDate": "2026-06-01",
+      "TotalAmt": 8500.0,
+      "Balance": 0,
+      "CustomerRef": {
+        "value": "10",
+        "name": "Cobalt Dental Clinic"
+      },
+      "CurrencyRef": {
+        "value": "USD",
+        "name": "United States Dollar"
+      }
+    },
+    {
+      "Id": "205",
+      "DocNumber": "1005",
+      "TxnDate": "2026-06-01",
+      "DueDate": "2026-07-01",
+      "TotalAmt": 6200.0,
+      "Balance": 6200.0,
+      "CustomerRef": {
+        "value": "11",
+        "name": "Oakridge Accounting Partners"
+      },
+      "CurrencyRef": {
+        "value": "USD",
+        "name": "United States Dollar"
+      }
+    }
+  ],
+  "Account": [
+    {
+      "Id": "35",
+      "Name": "Business Checking",
+      "AccountType": "Bank",
+      "AccountSubType": "Checking",
+      "CurrentBalance": 35166.35,
+      "Active": true
+    },
+    {
+      "Id": "33",
+      "Name": "Accounts Payable (A/P)",
+      "AccountType": "Accounts Payable",
+      "AccountSubType": "AccountsPayable",
+      "CurrentBalance": 21077.6,
+      "Active": true
+    },
+    {
+      "Id": "84",
+      "Name": "Accounts Receivable (A/R)",
+      "AccountType": "Accounts Receivable",
+      "AccountSubType": "AccountsReceivable",
+      "CurrentBalance": 14100.0,
+      "Active": true
+    },
+    {
+      "Id": "60",
+      "Name": "Repairs and Maintenance",
+      "AccountType": "Expense",
+      "AccountSubType": "RepairMaintenance",
+      "CurrentBalance": 24906.0,
+      "Active": true
+    },
+    {
+      "Id": "61",
+      "Name": "Utilities",
+      "AccountType": "Expense",
+      "AccountSubType": "Utilities",
+      "CurrentBalance": 1382.4,
+      "Active": true
+    },
+    {
+      "Id": "62",
+      "Name": "Office Supplies",
+      "AccountType": "Expense",
+      "AccountSubType": "OfficeGeneralAdministrativeExpenses",
+      "CurrentBalance": 0.0,
+      "Active": true
+    },
+    {
+      "Id": "79",
+      "Name": "Rental Income",
+      "AccountType": "Income",
+      "AccountSubType": "OtherPrimaryIncome",
+      "CurrentBalance": 32800.0,
+      "Active": true
+    }
+  ]
+}

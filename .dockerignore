@@ -1,0 +1,11 @@
+.venv
+.git
+.env
+storage
+**/__pycache__
+.pytest_cache
+.ruff_cache
+docs/images
+data/unseen_invoices
+data/sample/uploads
+tests

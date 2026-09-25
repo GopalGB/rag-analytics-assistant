@@ -1,8 +1,8 @@
 """In-memory vector index. A dense matrix + cosine search via a single matmul.
 
-This deliberately replaces the "JSON vectors scanned row-by-row in Python" anti-pattern.
-For large corpora, swap this class for a real ANN index (sqlite-vec, DuckDB VSS, FAISS) —
-see ADOPTION-GUIDE.md. The public API stays the same.
+Exact search: at small-business scale (tens of thousands of chunks) a matmul over a float32 matrix
+takes milliseconds. For much larger corpora swap this class for an ANN index (DuckDB VSS, FAISS,
+sqlite-vec) behind the same API.
 """
 
 from __future__ import annotations
@@ -13,6 +13,10 @@ import numpy as np
 class VectorIndex:
     def __init__(self) -> None:
         self._matrix: np.ndarray | None = None
+
+    @property
+    def matrix(self) -> np.ndarray | None:
+        return self._matrix
 
     def build(self, matrix: np.ndarray) -> VectorIndex:
         self._matrix = matrix if matrix.size else None

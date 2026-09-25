@@ -9,6 +9,9 @@ Security model (defense in depth — a denylist of function names is NOT relied 
    are rejected — closing direct-path reads and `main._internal` schema-qualified access.
 3. HARD ROW CAP: the query is wrapped in an outer `LIMIT`, so a missing or subquery-only `LIMIT`
    cannot return (or materialize) unbounded rows.
+4. BOUNDED WORK: the row cap does not bound aggregate work, so row generators (`range`,
+   `generate_series`, `unnest`, any table function, `WITH RECURSIVE`) are rejected, each query is
+   interrupted after `query_timeout_seconds`, and the connection has a memory limit.
 
 Ingestion reads CSVs in Python (pandas) and registers them in memory, so the engine never needs
 filesystem access even while loading data.
@@ -26,25 +29,45 @@ import pandas as pd
 
 # Introspection/table functions that expose engine internals. File-reading functions are already
 # impossible (lockdown); this is belt-and-suspenders against metadata disclosure.
-_BLOCKED_TOKENS = ("duckdb_", "pragma_", "sqlite_", "information_schema", "pg_catalog", "glob(")
+_BLOCKED_TOKENS = ("duckdb_", "pragma_", "sqlite_", "information_schema", "pg_catalog", "glob(", "getenv",
+                   "current_setting")
+_ROW_GENERATORS = re.compile(r"\b(range|generate_series|unnest)\s*\(", re.I)
 
 _COMMENT_BLOCK = re.compile(r"/\*.*?\*/", re.S)
 _COMMENT_LINE = re.compile(r"--[^\n]*")
 
 
+USER_MAX_ROWS = 200  # rows a model or a person can pull out in one query
+INTERNAL_MAX_ROWS = 1_000_000  # app-written SQL (reconciliation, reports) must see every row
+
 class UnsafeQueryError(ValueError):
     """Raised when a query is not a single, safe, read-only SELECT over allowed tables."""
+
+
+class ResultTooLargeError(RuntimeError):
+    """An app-internal read would have been cut off: callers must not present partial results as complete."""
 
 
 class DataStore:
     """Owns one DuckDB connection. Thread-safe via a coarse re-entrant lock."""
 
-    def __init__(self, db_path: str):
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    def __init__(self, db_path: str, query_timeout_seconds: float = 2.0, memory_limit: str = "512MB"):
+        if query_timeout_seconds <= 0:
+            raise ValueError("query_timeout_seconds must be positive")
+        if db_path != ":memory:":
+            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self.con = duckdb.connect(db_path)
         # Hard lockdown: queries may not touch the filesystem or network. One-way; never re-enabled.
         self.con.execute("SET enable_external_access=false")
+        if not re.fullmatch(r"\d+(\.\d+)?\s*[KMGT]?i?B", memory_limit, re.I):
+            raise ValueError(f"invalid memory limit: {memory_limit!r}")
+        self.con.execute(f"SET memory_limit='{memory_limit}'")
+        self.query_timeout_seconds = query_timeout_seconds
         self._lock = threading.RLock()
+        # Tables loaded from spreadsheet files in the data dir (vs. tables the app manages itself,
+        # like extracted invoices or QuickBooks data). Only these are dropped when a file disappears.
+        self.file_tables: set[str] = set()
+        self.failed_tables: set[str] = set()  # spreadsheets that could not be read on the last load
 
     # ---- introspection -------------------------------------------------
     def tables(self) -> list[str]:
@@ -61,12 +84,21 @@ class DataStore:
         return out
 
     def schema_summary(self, max_cols: int = 40) -> str:
+        """Tables and columns for the model. Names that need quoting in DuckDB (hyphens, spaces,
+        capitals) are shown quoted; wide tables list every column, the ones past `max_cols` without types.
+        Text columns carry no type (the prompt says so): this summary is resent on every model turn."""
+
+        def ident(name: str) -> str:
+            return name if re.fullmatch(r"[a-z_][a-z0-9_]*", name) else '"' + name.replace('"', '""') + '"'
+
+        def typed(name: str, ctype: str) -> str:
+            return ident(name) if ctype == "VARCHAR" else f"{ident(name)} {ctype}"
+
         lines: list[str] = []
         for table, cols in self.schema().items():
-            shown = cols[:max_cols]
-            col_text = ", ".join(f"{name} {ctype}" for name, ctype in shown)
+            col_text = ", ".join(typed(name, ctype) for name, ctype in cols[:max_cols])
             if len(cols) > max_cols:
-                col_text += f", … (+{len(cols) - max_cols} more)"
+                col_text += "; more columns: " + ", ".join(ident(name) for name, _ in cols[max_cols:])
             lines.append(f'- "{table}"({col_text})')
         return "\n".join(lines)
 
@@ -101,7 +133,10 @@ class DataStore:
         return int(count)
 
     # ---- safe querying -------------------------------------------------
-    def run_select(self, sql: str, max_rows: int = 200) -> tuple[list[str], list[tuple]]:
+    def run_select(self, sql: str, max_rows: int = 200, *, internal: bool = False) -> tuple[list[str], list[tuple]]:
+        """Validated, time-limited SELECT. Model- and user-written SQL is capped at USER_MAX_ROWS rows;
+        `internal=True` is only for SQL the app writes itself (reconciliation, reports), which must see every
+        row, so it gets INTERNAL_MAX_ROWS. The same validation and timeout apply either way."""
         cleaned = self._strip_comments(sql).strip().rstrip(";")
         if ";" in cleaned:
             raise UnsafeQueryError("multiple statements are not allowed")
@@ -114,22 +149,59 @@ class DataStore:
         # Reject file-reading table functions up front for a clear error (lockdown also blocks them).
         if re.search(r"\bread_\w+\s*\(", lowered) or re.search(r"\b\w+_scan\s*\(", lowered):
             raise UnsafeQueryError("file-reading functions are not allowed")
+        if re.search(r"\bwith\s+recursive\b", lowered):
+            raise UnsafeQueryError("recursive queries are not allowed")
+        if _ROW_GENERATORS.search(cleaned):
+            raise UnsafeQueryError("unsupported table function (row generators are not allowed)")
         self._assert_tables_allowed(cleaned)
 
-        wrapped = f"SELECT * FROM (\n{cleaned}\n) AS _capped LIMIT {int(max_rows)}"
+        max_rows = max(1, min(int(max_rows), INTERNAL_MAX_ROWS + 1 if internal else USER_MAX_ROWS))
+        wrapped = f"SELECT * FROM (\n{cleaned}\n) AS _capped LIMIT {max_rows}"
         with self._lock:
-            cur = self.con.execute(wrapped)
-            columns = [d[0] for d in cur.description]
-            rows = cur.fetchmany(int(max_rows))
+            timer = threading.Timer(self.query_timeout_seconds, self.con.interrupt)
+            timer.start()
+            try:
+                cur = self.con.execute(wrapped)
+                columns = [d[0] for d in cur.description]
+                rows = cur.fetchmany(max_rows)
+            except duckdb.InterruptException as exc:
+                raise UnsafeQueryError("query execution exceeded the time limit") from exc
+            finally:
+                timer.cancel()
+                timer.join()
         return columns, rows
+
+    def read_all(self, sql: str) -> tuple[list[str], list[tuple]]:
+        """Every row of an app-written query (reconciliation, bank matching), or ResultTooLargeError. Never a
+        silently shortened result."""
+        cols, rows = self.run_select(sql, max_rows=INTERNAL_MAX_ROWS + 1, internal=True)
+        if len(rows) > INTERNAL_MAX_ROWS:
+            raise ResultTooLargeError(f"more than {INTERNAL_MAX_ROWS:,} rows; refusing to work on a partial result")
+        return cols, rows
 
     @staticmethod
     def _strip_comments(sql: str) -> str:
         return _COMMENT_LINE.sub(" ", _COMMENT_BLOCK.sub(" ", sql))
 
+    def referenced_tables(self, sql: str) -> set[str]:
+        """Real tables a query may read. A CTE named like a real table counts as that table (fail closed:
+        `WITH secret AS (SELECT * FROM secret)` reads the real table). Raises UnsafeQueryError if unparseable."""
+        referenced, ctes = self._parse_tables(self._strip_comments(sql).strip().rstrip(";"))
+        real = {t.lower() for t in self.tables()}
+        return {t.lower() for t in referenced if t.lower() not in ctes or t.lower() in real}
+
     def _assert_tables_allowed(self, sql: str) -> None:
         """Parse with DuckDB and require every referenced table to be a known, non-internal table
         (or a CTE defined in the query). Rejects direct file paths, internal/temp tables, unknowns."""
+        referenced, ctes = self._parse_tables(sql)
+        allowed = {t.lower() for t in self.tables()} | ctes
+        for name in referenced:
+            if name.lower() in ctes:
+                continue
+            if name.startswith("_") or name.lower() not in allowed:
+                raise UnsafeQueryError(f"query references unknown or internal table: {name!r}")
+
+    def _parse_tables(self, sql: str) -> tuple[list[str], set[str]]:
         try:
             with self._lock:
                 serialized = self.con.execute("SELECT json_serialize_sql(?)", [sql]).fetchone()[0]
@@ -142,6 +214,8 @@ class DataStore:
 
         def walk(node: object) -> None:
             if isinstance(node, dict):
+                if node.get("type") == "TABLE_FUNCTION":
+                    raise UnsafeQueryError("table functions are not allowed")
                 name = node.get("table_name")
                 if isinstance(name, str):
                     referenced.append(name)
@@ -158,12 +232,7 @@ class DataStore:
                     walk(value)
 
         walk(ast)
-        allowed = {t.lower() for t in self.tables()} | ctes
-        for name in referenced:
-            if name.lower() in ctes:
-                continue
-            if name.startswith("_") or name.lower() not in allowed:
-                raise UnsafeQueryError(f"query references unknown or internal table: {name!r}")
+        return referenced, ctes
 
     def close(self) -> None:
         with self._lock:

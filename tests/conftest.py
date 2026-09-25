@@ -7,10 +7,48 @@ from pathlib import Path
 
 import pytest
 
+from app.config import Settings
 from app.data import ingest
 from app.data.store import DataStore
 from app.rag.embeddings import EmbeddingService
 from app.rag.retriever import Retriever
+
+# A developer's .env (provider keys, PUBLIC_DEMO, ...) must not leak into tests: switch dotenv loading off
+# before any test module imports app.main and builds its Settings. Environment variables still apply, and
+# the fixture below clears the provider ones.
+Settings.model_config["env_file"] = None
+
+_PROVIDER_ENV = (
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "OPENAI_MODEL",
+    "GEMINI_API_KEY",
+    "OPENROUTER_API_KEY",
+    "GROQ_API_KEY",
+    "MISTRAL_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "TOGETHER_API_KEY",
+    "XAI_API_KEY",
+    "AZURE_OPENAI_API_KEY",
+    "AZURE_OPENAI_ENDPOINT",
+    "BEDROCK_MODEL_ID",
+    "LLM_CLI_COMMAND",
+    "LLM_PROVIDER",
+    "LLM_MODELS_STRONG",
+    "LLM_MODELS_FAST",
+    "ALLOW_CLOUD_AI",
+    "EMBEDDING_API_KEY",
+    "PUBLIC_DEMO",
+    "APP_API_KEY",
+)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_provider_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep a developer's shell (provider keys, routing overrides) from changing test outcomes."""
+    for name in _PROVIDER_ENV:
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture
@@ -54,10 +92,16 @@ class FakeLLM:
         self.sql = sql
         self.answer = answer
 
+    name = "fake"
+    is_local = True
+
     def converse(self, system, history, question, toolbox, max_iters):
         if self.sql:
             toolbox.run("run_sql", {"sql": self.sql})
         return self.answer
+
+    def complete(self, system, prompt):
+        return "{}"
 
 
 @pytest.fixture

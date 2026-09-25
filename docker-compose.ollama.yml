@@ -1,0 +1,21 @@
+# Adds Ollama in a container and points the assistant at it. Use on servers without a native Ollama:
+#   docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d     (= make docker-up-ollama)
+# Then pull a model once:  docker compose -f docker-compose.yml -f docker-compose.ollama.yml exec ollama ollama pull qwen2.5:14b
+services:
+  assistant:
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434/v1
+      LOCAL_MODEL_HOSTS: "ollama"   # this compose service runs on this machine, so it counts as local
+    depends_on:
+      - ollama
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+
+volumes:
+  ollama-models:

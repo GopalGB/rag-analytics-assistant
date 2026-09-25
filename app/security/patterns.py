@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 
-PATTERN_VERSION = "1.1.0"
+PATTERN_VERSION = "1.2.0"
 
 # Instruction-override / system-prompt extraction / persona-jailbreak.
 INJECTION = [
@@ -39,7 +39,8 @@ EXFILTRATION = [
 # Requests for general-purpose code/content generation outside the analytics scope.
 CODE_REQUEST = [
     re.compile(r"\bwrite\s+(me\s+)?(a\s+)?(python|javascript|bash|sql|code|script|program|function)\b", re.I),
-    re.compile(r"\b(write|compose)\s+(me\s+)?(a\s+)?(poem|essay|story|song|email|letter)\b", re.I),
+    # Drafting business emails/letters/reports is in scope (drafts only; sending needs approval).
+    re.compile(r"\b(write|compose)\s+(me\s+)?(a\s+)?(poem|essay|story|song|joke)\b", re.I),
     re.compile(r"\btranslate\s+(this|the\s+following)\b", re.I),
 ]
 

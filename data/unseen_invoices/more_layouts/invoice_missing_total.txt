@@ -1,0 +1,6 @@
+SYNTHETIC INTERVIEW-DEMO DATA
+Invoice INV-MISSING
+Vendor: Fictional Vendor
+Quantity: 2
+Unit price: $10.00
+Total: MISSING
