@@ -160,3 +160,22 @@ def test_no_model_answer_to_what_needs_attention(sample):
     assert r["route"] == "attention" and r["text"].startswith("No AI model is connected")
     assert "1. Do first: Car park resurfacing is over budget by $6,400.00. Committed" in r["text"]
     assert ".." not in r["text"] and any(s["file"].endswith("brightspark_BSC-118.pdf") for s in r["sources"])
+
+
+def test_reconciliation_that_cannot_read_everything_is_withdrawn_not_shown(sample, monkeypatch):
+    from app.accounting import reconcile as reconcile_mod
+    from app.data.store import ResultTooLargeError
+
+    def too_big(*_a, **_k):
+        raise ResultTooLargeError("more than 1,000,000 rows; refusing to work on a partial result")
+
+    monkeypatch.setattr(reconcile_mod, "reconcile", too_big)
+    try:
+        assert sample._reconcile() == 0
+        assert "invoice_reconciliation" not in sample.store.tables()
+        assert any("Reconciliation was not run" in e for e in sample.attention()["errors"])
+        assert any("Reconciliation was not run" in e for e in sample.dashboard()["errors"])
+    finally:
+        monkeypatch.undo()
+        sample._reconcile()  # restore for anything that runs later
+    assert sample.reconcile_error is None and "invoice_reconciliation" in sample.store.tables()

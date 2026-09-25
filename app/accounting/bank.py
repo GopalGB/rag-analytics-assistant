@@ -86,7 +86,7 @@ def _date(v: Any) -> date | None:
 def load_bank_lines(store: DataStore) -> list[dict[str, Any]]:
     lines: list[dict[str, Any]] = []
     for table in bank_tables(store):
-        cols, rows = store.run_select(f'SELECT * FROM "{table}"', max_rows=100000, internal=True)
+        cols, rows = store.read_all(f'SELECT * FROM "{table}"')
         c = {role: _pick(cols, role) for role in _COLS}
         for i, r in enumerate(rows):
             row = dict(zip(cols, r, strict=False))
@@ -128,10 +128,10 @@ def reconcile_bank(store: DataStore) -> list[dict[str, Any]]:
     bills: list[dict[str, Any]] = []
     invoices: list[dict[str, Any]] = []
     if "qbo_bills" in tables:
-        cols, rows = store.run_select("SELECT * FROM qbo_bills", max_rows=100000, internal=True)
+        cols, rows = store.read_all("SELECT * FROM qbo_bills")
         bills = [dict(zip(cols, r, strict=False)) for r in rows]
     if "qbo_invoices" in tables:
-        cols, rows = store.run_select("SELECT * FROM qbo_invoices", max_rows=100000, internal=True)
+        cols, rows = store.read_all("SELECT * FROM qbo_invoices")
         invoices = [dict(zip(cols, r, strict=False)) for r in rows]
 
     paid_bills = [b for b in bills if _num(b.get("total")) - _num(b.get("balance")) > 0.009]

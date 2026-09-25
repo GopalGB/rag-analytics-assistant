@@ -322,7 +322,7 @@ def extract_rules(text: str, known_suppliers: list[str] | None = None, date_orde
             for m in rx.finditer(line):
                 val = m.group(1).rstrip(".")
                 ident = re.search(r"\d", val) or (
-                    pat in _DIGIT_FREE_OK and re.fullmatch(r"[A-Z0-9]{2,}(?:[-/][A-Z0-9]{2,})+", val))
+                    pat in _DIGIT_FREE_OK and re.fullmatch(r"[A-Z0-9]{2,}(?:[-/][A-Z0-9]{2,})+", val, re.I))
                 if (ident and val.upper() not in _PLACEHOLDERS and len(val) <= 30
                         and not re.fullmatch(DATE_RE, val, re.I)):
                     hit = FieldValue(val, conf, line.strip())

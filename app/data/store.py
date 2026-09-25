@@ -44,6 +44,10 @@ class UnsafeQueryError(ValueError):
     """Raised when a query is not a single, safe, read-only SELECT over allowed tables."""
 
 
+class ResultTooLargeError(RuntimeError):
+    """An app-internal read would have been cut off: callers must not present partial results as complete."""
+
+
 class DataStore:
     """Owns one DuckDB connection. Thread-safe via a coarse re-entrant lock."""
 
@@ -147,7 +151,7 @@ class DataStore:
             raise UnsafeQueryError("unsupported table function (row generators are not allowed)")
         self._assert_tables_allowed(cleaned)
 
-        max_rows = max(1, min(int(max_rows), INTERNAL_MAX_ROWS if internal else USER_MAX_ROWS))
+        max_rows = max(1, min(int(max_rows), INTERNAL_MAX_ROWS + 1 if internal else USER_MAX_ROWS))
         wrapped = f"SELECT * FROM (\n{cleaned}\n) AS _capped LIMIT {max_rows}"
         with self._lock:
             timer = threading.Timer(self.query_timeout_seconds, self.con.interrupt)
@@ -162,6 +166,14 @@ class DataStore:
                 timer.cancel()
                 timer.join()
         return columns, rows
+
+    def read_all(self, sql: str) -> tuple[list[str], list[tuple]]:
+        """Every row of an app-written query (reconciliation, bank matching), or ResultTooLargeError. Never a
+        silently shortened result."""
+        cols, rows = self.run_select(sql, max_rows=INTERNAL_MAX_ROWS + 1, internal=True)
+        if len(rows) > INTERNAL_MAX_ROWS:
+            raise ResultTooLargeError(f"more than {INTERNAL_MAX_ROWS:,} rows; refusing to work on a partial result")
+        return cols, rows
 
     @staticmethod
     def _strip_comments(sql: str) -> str:

@@ -21,6 +21,7 @@ from app.invoices.registry import InvoiceRecord
 SEVERITY = {
     "matched": "ok",
     "amount_mismatch": "issue",
+    "currency_mismatch": "issue",
     "possible_match": "warning",
     "not_in_quickbooks": "warning",
     "duplicate": "issue",
@@ -36,6 +37,13 @@ def _same_vendor(a: str | None, b: str | None) -> bool:
     return na == nb or difflib.SequenceMatcher(None, na, nb).ratio() >= 0.85
 
 
+def _currency_conflict(doc: Any, bill: dict[str, Any]) -> tuple[str, str] | None:
+    """(invoice currency, bill currency) when both are known and differ; equal numbers in two currencies are not
+    the same amount."""
+    a, b = str(doc or "").strip().upper(), str(bill.get("currency") or "").strip().upper()
+    return (a, b) if a and b and a != b else None
+
+
 def _days_apart(a: Any, b: Any) -> int:
     try:
         return abs((date.fromisoformat(str(a)) - date.fromisoformat(str(b))).days)
@@ -46,7 +54,7 @@ def _days_apart(a: Any, b: Any) -> int:
 def _bills(store: DataStore) -> list[dict[str, Any]]:
     if "qbo_bills" not in store.tables():
         return []
-    cols, rows = store.run_select("SELECT * FROM qbo_bills", max_rows=100000, internal=True)
+    cols, rows = store.read_all("SELECT * FROM qbo_bills")
     return [dict(zip(cols, r, strict=False)) for r in rows]
 
 
@@ -97,7 +105,12 @@ def reconcile(records: list[InvoiceRecord], store: DataStore) -> list[dict[str, 
             bill = exact[0]
             used.add(bill["id"])
             total = v.get("total")
-            if total is not None and abs(float(bill["total"]) - total) <= 0.01:
+            conflict = _currency_conflict(v.get("currency"), bill)
+            if conflict:
+                out.append(row(rec, bill, "currency_mismatch",
+                               f"QuickBooks bill {bill['id']} is in {conflict[1]} but the invoice is in {conflict[0]}; "
+                               "check which is right before comparing amounts."))
+            elif total is not None and abs(float(bill["total"]) - total) <= 0.01:
                 paid = "paid" if not bill.get("balance") else f"open balance {float(bill['balance']):,.2f}"
                 out.append(row(rec, bill, "matched", f"Recorded in QuickBooks as bill {bill['id']}; amounts agree ({paid})."))
             else:
@@ -115,6 +128,7 @@ def reconcile(records: list[InvoiceRecord], store: DataStore) -> list[dict[str, 
             if _same_vendor(v.get("supplier"), b.get("vendor_name"))
             and v.get("total") is not None and abs(float(b["total"]) - v["total"]) <= 0.01
             and _days_apart(v.get("invoice_date"), b.get("txn_date")) <= 7
+            and not _currency_conflict(v.get("currency"), b)  # same number in another currency is no match
         ]
         if fuzzy:
             bill = fuzzy[0]

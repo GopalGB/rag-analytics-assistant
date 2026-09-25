@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import threading
 from datetime import datetime
@@ -25,7 +26,7 @@ from app.approvals import ApprovalQueue
 from app.audit import AuditLog
 from app.config import Settings
 from app.data import watcher
-from app.data.store import DataStore
+from app.data.store import DataStore, ResultTooLargeError
 from app.documents.ocr import OCREngine
 from app.documents.parsers import DOC_SUFFIXES, ParseCache
 from app.integrations.quickbooks import MockQuickBooks, QuickBooksOnline, TokenStore
@@ -60,6 +61,7 @@ class Workspace:
         self.invoices = InvoiceRegistry(storage / "invoice_reviews.json", date_order=settings.date_order)
         self._lock = threading.RLock()
         self.last_qbo_sync: str | None = None
+        self.reconcile_error: str | None = None  # set when reconciliation could not read all of its data
         self.last_reindex: str | None = None
 
         for field_name in ("anthropic_api_key", "openai_api_key", "gemini_api_key", "openrouter_api_key", "groq_api_key",
@@ -218,16 +220,27 @@ class Workspace:
     def _known_vendors(self) -> list[str]:
         if "qbo_vendors" not in self.store.tables():
             return []
-        _, rows = self.store.run_select("SELECT name FROM qbo_vendors", max_rows=5000, internal=True)
+        _, rows = self.store.read_all("SELECT name FROM qbo_vendors")
         return [r[0] for r in rows if r[0]]
 
     def _reconcile(self) -> int:
         if "qbo_bills" not in self.store.tables():
             return 0
-        rows = reconcile.reconcile(self.invoices.records, self.store)
-        n = reconcile.load_reconciliation(self.store, rows)
-        if bank.bank_tables(self.store):
-            bank.load_bank_reconciliation(self.store, bank.reconcile_bank(self.store))
+        try:
+            rows = reconcile.reconcile(self.invoices.records, self.store)
+            n = reconcile.load_reconciliation(self.store, rows)
+            if bank.bank_tables(self.store):
+                bank.load_bank_reconciliation(self.store, bank.reconcile_bank(self.store))
+        except ResultTooLargeError as exc:
+            # never show reconciliation built from part of the data: drop the stale output and say why
+            for table in ("invoice_reconciliation", "bank_reconciliation"):
+                self.store.drop_table(table)
+            self.reconcile_error = f"Reconciliation was not run: {exc}"
+            from app.observability import event
+
+            event("reconcile_skipped", logging.WARNING, error=str(exc))
+            return 0
+        self.reconcile_error = None
         return n
 
     @property
@@ -329,13 +342,13 @@ class Workspace:
         """The ranked "needs attention" list (see app/accounting/insights.py)."""
         with analytics.collect_query_errors() as errors:
             out = insights.attention(self.store, self.engine.documents, self.as_of)
-        out["errors"] = errors
+        out["errors"] = errors + ([self.reconcile_error] if self.reconcile_error else [])
         return out
 
     def dashboard(self) -> dict[str, Any]:
         with analytics.collect_query_errors() as errors:
             out = self._dashboard()
-        out["errors"] = errors
+        out["errors"] = errors + ([self.reconcile_error] if self.reconcile_error else [])
         return out
 
     def _dashboard(self) -> dict[str, Any]:

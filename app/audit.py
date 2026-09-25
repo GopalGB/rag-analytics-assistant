@@ -90,13 +90,14 @@ class AuditLog:
             return self._memory[-limit:]
         if not self.path.exists():
             return []
-        buf: deque[str] = deque(maxlen=max(1, limit))
+        # parse first, then keep the last `limit` good entries: a truncated or wrong-shaped final line must not hide
+        # the last valid entry (the next record chains to it). verify() is what reports the bad line.
+        buf: deque[dict[str, Any]] = deque(maxlen=max(1, limit))
         with self.path.open(encoding="utf-8") as fh:
             for line in fh:
-                if line.strip():
-                    buf.append(line)
-        # a truncated or wrong-shaped line is skipped here (verify() reports it); reading must not crash the app
-        return [e for e in map(_parse, buf) if e is not None]
+                if line.strip() and (entry := _parse(line)) is not None:
+                    buf.append(entry)
+        return list(buf)
 
     def verify(self) -> dict[str, Any]:
         prev = GENESIS

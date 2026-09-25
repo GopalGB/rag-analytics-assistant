@@ -100,7 +100,9 @@ def aging(store: DataStore, table: str, as_of: date) -> list[dict[str, Any]]:
 def overdue_items(store: DataStore, table: str, as_of: date, name_col: str) -> list[dict[str, Any]]:
     if table not in store.tables():
         return []
-    rows = _q(store, f"SELECT {name_col} AS name, doc_number, due_date, balance FROM {table} WHERE balance > 0")
+    has_currency = any(c.lower() == "currency" for c, _ in store.schema().get(table, []))
+    cur = "currency" if has_currency else "NULL AS currency"  # a bill in GBP must not be shown or totalled as USD
+    rows = _q(store, f"SELECT {name_col} AS name, doc_number, due_date, balance, {cur} FROM {table} WHERE balance > 0")
     out = []
     for r in rows:
         due = pd.to_datetime(r["due_date"], errors="coerce")

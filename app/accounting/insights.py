@@ -31,6 +31,7 @@ from app.documents.deadlines import find_deadlines
 SEVERITY_ORDER = {"critical": 0, "warning": 1, "info": 2}
 _LABELS = {
     "amount_mismatch": "amount differs from QuickBooks",
+    "currency_mismatch": "currency differs from QuickBooks",
     "duplicate": "duplicate of an invoice already on file",
     "not_in_quickbooks": "not recorded in QuickBooks",
     "no_document": "QuickBooks bill with no invoice on file",
@@ -178,15 +179,18 @@ def attention(store: DataStore, documents: list, as_of: date) -> dict[str, Any]:
             days = r["days_overdue"]
             sev = "critical" if days > 60 else "warning" if days > 14 else "info"
             if kind == "receivable":
-                items.append(_item(sev, "receivables", f"{r['name']} owes {_money(r['balance'])}, {days} days overdue",
+                items.append(_item(sev, "receivables",
+                                   f"{r['name']} owes {money(r['balance'], r.get('currency'))}, {days} days overdue",
                                    f"Customer invoice {r['doc_number']} was due {r['due_date']}.",
                                    {"type": "table", "name": table}, r["balance"],
-                                   f"Draft a payment reminder to {r['name']} for invoice {r['doc_number']}", "quickbooks"))
+                                   f"Draft a payment reminder to {r['name']} for invoice {r['doc_number']}", "quickbooks",
+                                   r.get("currency")))
             else:
                 items.append(_item(sev, "payables", f"Bill from {r['name']} is {days} days overdue",
-                                   f"Bill {r['doc_number']} for {_money(r['balance'])} was due {r['due_date']}.",
-                                   {"type": "table", "name": table}, r["balance"],
-                                   f"Why is the {r['name']} bill {r['doc_number']} unpaid?", "quickbooks"))
+                                   f"Bill {r['doc_number']} for {money(r['balance'], r.get('currency'))} was due "
+                                   f"{r['due_date']}.", {"type": "table", "name": table}, r["balance"],
+                                   f"Why is the {r['name']} bill {r['doc_number']} unpaid?", "quickbooks",
+                                   r.get("currency")))
 
     # 4. bank statement vs QuickBooks
     if "bank_reconciliation" in tables:

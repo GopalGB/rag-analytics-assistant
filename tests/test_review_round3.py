@@ -213,3 +213,88 @@ def test_preflight_requires_storage_inside_tmp(tmp_path):
     out = subprocess.run([sys.executable, str(ROOT / "scripts" / "preflight.py"), "--target", "public-demo"],
                          capture_output=True, text=True, env=env, cwd=tmp_path)
     assert "[FAIL] STORAGE_DIR is under /tmp" in out.stdout, out.stdout
+
+
+# --------------------------------------------------------------------------- review of 9811fd5..ea33f18
+def _record(file, supplier, number, total, currency):
+    from app.invoices.registry import InvoiceRecord
+
+    return InvoiceRecord(id=file, file=file, sha256=file,
+                         values={"supplier": supplier, "invoice_number": number, "invoice_date": "2026-07-01",
+                                 "total": total, "currency": currency},
+                         field_confidence={}, field_notes={}, field_evidence={}, confidence=0.9, issues=[],
+                         method="rules", ocr=False)
+
+
+def test_internal_reads_are_exhaustive_or_refuse(tmp_path, monkeypatch):
+    import app.data.store as store_mod
+
+    store = DataStore(str(tmp_path / "r.duckdb"))
+    store.load_dataframe("qbo_bills", pd.DataFrame({"total": [1.0] * 12}))
+    monkeypatch.setattr(store_mod, "INTERNAL_MAX_ROWS", 10)
+    with pytest.raises(store_mod.ResultTooLargeError):
+        store.read_all("SELECT * FROM qbo_bills")
+    monkeypatch.setattr(store_mod, "INTERNAL_MAX_ROWS", 12)
+    assert len(store.read_all("SELECT * FROM qbo_bills")[1]) == 12
+    store.close()
+
+
+def test_same_number_in_another_currency_is_not_a_match(tmp_path):
+    from app.accounting.reconcile import reconcile
+
+    store = DataStore(str(tmp_path / "m.duckdb"))
+    store.load_dataframe("qbo_bills", pd.DataFrame([
+        {"id": "1", "doc_number": "E-1", "vendor_name": "Euro GmbH", "txn_date": "2026-07-01", "total": 500.0,
+         "balance": 500.0, "currency": "USD"},
+        {"id": "2", "doc_number": "X-9", "vendor_name": "Euro GmbH", "txn_date": "2026-07-02", "total": 800.0,
+         "balance": 800.0, "currency": "USD"}]))
+    rows = {r["invoice_number"]: r for r in reconcile([
+        _record("invoices/e1.pdf", "Euro GmbH", "E-1", 500.0, "EUR"),   # same number and amount, other currency
+        _record("invoices/e2.pdf", "Euro GmbH", None, 800.0, "EUR"),    # would be a fuzzy match on amount alone
+    ], store) if r["file"]}
+    assert rows["E-1"]["status"] == "currency_mismatch" and "USD" in rows["E-1"]["detail"]
+    assert next(r for r in rows.values() if r["file"] == "invoices/e2.pdf")["status"] == "not_in_quickbooks"
+    store.close()
+
+
+def test_overdue_bills_keep_their_currency(tmp_path):
+    store = DataStore(str(tmp_path / "o.duckdb"))
+    store.load_dataframe("qbo_bills", pd.DataFrame([
+        {"id": "9", "doc_number": "GB-7", "vendor_name": "London Ltd", "txn_date": "2026-05-01",
+         "due_date": "2026-05-31", "total": 900.0, "balance": 900.0, "currency": "GBP"}]))
+    a = insights.attention(store, [], date(2026, 7, 15))
+    item = next(i for i in a["items"] if i["category"] == "payables")
+    assert item["currency"] == "GBP" and "GBP 900.00" in item["detail"]
+    assert a["money_at_stake"] == 0 and a["money_at_stake_other"] == {"GBP": 900.0}
+    store.close()
+
+
+def test_attention_text_is_masked_for_cloud_models(tmp_path, retriever):
+    store = DataStore(str(tmp_path / "pii.duckdb"))
+    result = {"as_of": "2026-07-15", "counts": {}, "money_at_stake": 0, "money_at_stake_other": {}, "currency": "USD",
+              "items": [{"severity": "warning", "category": "review", "title": "Call jane.doe@example.com",
+                         "detail": "Phone 415-555-0134 about invoice", "amount": None, "currency": "USD",
+                         "source": {"type": "file", "name": "documents/notes.md"}}]}
+    guard = PrivacyGuard(PrivacyPolicy(True, frozenset({"documents", "accounting"}), True))
+    guard.cloud = True
+    out = ToolBox(store, retriever, privacy=guard, insights=lambda: result).run("attention_items", {})
+    text = json.dumps(out)
+    assert "jane.doe@example.com" not in text and "415-555-0134" not in text
+    assert result["items"][0]["title"] == "Call jane.doe@example.com"  # the local list itself is untouched
+    store.close()
+
+
+def test_new_audit_records_chain_to_the_last_valid_entry(tmp_path):
+    path = tmp_path / "audit.jsonl"
+    log = AuditLog(path)
+    last = log.record("one")
+    with path.open("a") as fh:
+        fh.write('{"truncated": \n')
+    again = AuditLog(path)
+    assert again.tail(1)[-1]["hash"] == last["hash"]
+    assert again.record("two")["prev"] == last["hash"]
+    assert again.verify()["ok"] is False  # the bad line is still reported
+
+
+def test_lowercase_digit_free_invoice_number():
+    assert extract_rules("Acme Ltd\nINVOICE\nInvoice ab-cd\nTotal: $1.00").fields["invoice_number"].value == "ab-cd"

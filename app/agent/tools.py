@@ -114,7 +114,12 @@ class ToolBox:
             if not allowed:
                 return blocked
         self.touched_classes |= classes
-        return for_model(result, limit)
+        view = for_model(result, limit)
+        if self.privacy:  # same PII masking as document passages before anything goes to a cloud model
+            for item in view["items"]:
+                item["title"] = self.privacy.outgoing(item["title"])
+                item["detail"] = self.privacy.outgoing(item["detail"])
+        return view
 
     def _log(self, name: str, result: dict[str, Any]) -> dict[str, Any]:
         self.calls.append({"tool": name, "ok": "error" not in result, "error": result.get("error")})
