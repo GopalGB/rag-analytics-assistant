@@ -62,6 +62,7 @@ function show(tab) {
   document.querySelectorAll("main section").forEach((s) => s.classList.toggle("active", s.id === "tab-" + tab));
   if (location.hash !== "#" + tab) history.replaceState(null, "", "#" + tab);
   loaders[tab] && loaders[tab]();
+  if (tab === "ask" && matchMedia("(pointer: fine)").matches) setTimeout(() => $("#q").focus(), 0);
 }
 document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => show(b.dataset.tab)));
 window.addEventListener("hashchange", () => { const t = location.hash.slice(1); if (document.getElementById("tab-" + t)) show(t); });
@@ -75,6 +76,7 @@ async function refreshHealth() {
       document.body.classList.add("public-demo");
       $("#demo-badge").hidden = false;
       document.querySelectorAll(".demo-only").forEach((n) => { n.hidden = false; });
+      $("#nav-foot").textContent = "Hosted demo with synthetic and public data. Read-only.";
     }
     const llm = $("#chip-llm");
     llm.textContent = h.llm_enabled ? `AI: ${h.llm} (${h.llm_local ? "local" : "cloud"})${h.models > 1 ? ` +${h.models - 1} more` : ""}` : "AI: off · quoting sources only";
@@ -102,7 +104,9 @@ function renderAnswer(text) {
   }
   return frag;
 }
+function typing() { return el("span", { class: "typing", "aria-label": "Working" }, el("i"), el("i"), el("i")); }
 function addMsg(role, text, payload) {
+  if (role === "user") $("#tab-ask").classList.add("chatting");
   const bubble = el("div", { class: "bubble" });
   if (role === "user") bubble.textContent = text; else bubble.append(renderAnswer(text));
   const wrap = el("div", { class: "msg " + role }, bubble);
@@ -110,38 +114,42 @@ function addMsg(role, text, payload) {
     const routeLabel = { agent: ["AI answer", "ok"], extractive: ["Quoted from sources · no AI", "warn"], attention: ["Computed from your data · no AI", "info"], refused: ["Refused", "bad"], greeting: ["", ""] }[payload.route] || [payload.route, "info"];
     const meta = el("div", { class: "meta" });
     if (routeLabel[0]) meta.append(el("span", { class: "pill " + routeLabel[1], text: routeLabel[0] }));
-    const rt = payload.routing;
-    if (rt) {
-      if (rt.intent) meta.append(el("span", { class: "pill info", title: `routed by ${rt.method}: ${rt.reason || ""}`, text: rt.intent }));
-      if (rt.model) meta.append(el("span", { class: "pill " + (rt.model_local ? "ok" : "warn"), text: `${rt.model} · ${rt.model_local ? "local" : "cloud"}` }));
-      const pv = rt.privacy || {};
-      if (pv.local_only && pv.reasons && pv.reasons.length) meta.append(el("span", { class: "pill ok", title: pv.reasons.join("; "), text: "kept on this machine" }));
-      if (pv.redactions) meta.append(el("span", { class: "pill info", text: `${pv.redactions} detail(s) masked for cloud` }));
-      if (pv.withheld_passages) meta.append(el("span", { class: "pill info", text: `${pv.withheld_passages} sensitive passage(s) withheld from cloud` }));
-      if (rt.fallbacks) meta.append(el("span", { class: "pill warn", text: `${rt.fallbacks} fallback(s)` }));
-    }
+    if (payload.cached) meta.append(el("span", { class: "pill", title: "Same question answered earlier; reused to save the free model quota", text: "cached" }));
     if (payload.checks && payload.checks.unverified_citations && payload.checks.unverified_citations.length)
       meta.append(el("span", { class: "pill bad", title: payload.checks.unverified_citations.join(", "), text: "citation not in retrieved sources" }));
     if (meta.childNodes.length) wrap.append(meta);
+    const seen = new Set();
+    const uniq = (payload.sources || []).filter((s) => !seen.has(s.cite) && seen.add(s.cite));
+    if (uniq.length) {
+      const row = el("div", { class: "src-row" }, el("span", { class: "muted", text: "Sources" }));
+      uniq.slice(0, 6).forEach((s) => {
+        const a = fileLink(s.file, s.page, s.cite);
+        a.className = "src-chip";
+        a.title = (s.snippet || "").slice(0, 260);
+        row.append(a);
+      });
+      if (uniq.length > 6) row.append(el("span", { class: "muted", text: `+${uniq.length - 6} more` }));
+      wrap.append(row);
+    }
+    const rt = payload.routing;
     if (rt && rt.attempts && rt.attempts.length) {
       const d = el("details", {}, el("summary", { text: "How this was answered" }));
       const lines = [`Task: ${rt.intent || "-"} (${rt.method || "-"}) · tier: ${rt.tier || "-"} · tools: ${(rt.tools || []).join(", ") || "-"}`];
-      if (rt.privacy && rt.privacy.reasons && rt.privacy.reasons.length) lines.push("Privacy: " + rt.privacy.reasons.join("; "));
-      rt.attempts.forEach((a, i) => lines.push(`${i + 1}. ${a.model} (${a.local ? "local" : "cloud"}) — ${a.ok ? "answered" : "failed: " + a.error} · ${a.ms} ms · ${a.input_tokens}+${a.output_tokens} tokens${a.cost_usd ? " · $" + a.cost_usd.toFixed(4) : ""}`));
+      if (rt.model) lines.push(`Model: ${rt.model} (${rt.model_local ? "local" : "cloud"})${rt.fallbacks ? `, after ${rt.fallbacks} fallback(s)` : ""}`);
+      const pv = rt.privacy || {};
+      if (pv.local_only && pv.reasons && pv.reasons.length) lines.push(`Kept on this machine: ${pv.reasons.join("; ")}`);
+      if (pv.redactions) lines.push(`${pv.redactions} detail(s) masked before reaching the model`);
+      if (pv.withheld_passages) lines.push(`${pv.withheld_passages} sensitive passage(s) withheld from the model`);
+      rt.attempts.forEach((a, i) => lines.push(`${i + 1}. ${a.model} (${a.local ? "local" : "cloud"}): ${a.ok ? "answered" : "failed: " + a.error} · ${a.ms} ms · ${a.input_tokens}+${a.output_tokens} tokens${a.cost_usd ? " · $" + a.cost_usd.toFixed(4) : ""}`));
       (rt.tool_calls || []).forEach((t) => lines.push(`tool ${t.tool}: ${t.ok ? "ok" : t.error}`));
       d.append(el("pre", { text: lines.join("\n") }));
+      uniq.slice(0, 6).forEach((s) => d.append(el("div", { class: "passage" }, fileLink(s.file, s.page, s.cite),
+        el("span", { class: "muted", text: (s.snippet || "").slice(0, 260) + "..." }))));
       wrap.append(d);
-    }
-    if (payload.sources && payload.sources.length) {
-      const box = el("div", { class: "sources" });
-      payload.sources.slice(0, 6).forEach((s) => box.append(el("div", { class: "source" },
-        fileLink(s.file, s.page, s.cite), el("span", { class: "muted small", text: "  " + s.file }),
-        el("div", { class: "snip", text: (s.snippet || "").slice(0, 260) + "…" }))));
-      wrap.append(el("details", { open: "" }, el("summary", { text: `Sources (${payload.sources.length})` }), box));
     }
     if (payload.actions && payload.actions.length) {
       payload.actions.forEach((a) => wrap.append(el("div", { class: "note", style: "margin-top:8px" },
-        `Queued for approval: ${a.title} — nothing has been sent. `, el("a", { href: "#approvals", onclick: () => show("approvals"), text: "Review" }))));
+        `Queued for approval: ${a.title} - nothing has been sent. `, el("a", { href: "#approvals", onclick: () => show("approvals"), text: "Review" }))));
     }
     if (payload.rows && payload.rows.length > 1 && window.Charts) {
       const box = el("div", { style: "margin-top:8px;max-width:640px" });
@@ -162,14 +170,14 @@ function addMsg(role, text, payload) {
   wrap.scrollIntoView({ behavior: "smooth", block: "end" });
   return wrap;
 }
-const TOOL_LABEL = { search_docs: "Searching documents", run_sql: "Querying data", propose_action: "Preparing an action for approval" };
+const TOOL_LABEL = { search_docs: "Searching documents", run_sql: "Querying data", propose_action: "Preparing an action for approval", attention_items: "Checking what needs attention" };
 async function askStream(question, live) {
   // Server-sent events: progress steps, scrubbed text snapshots, then the final payload.
   const r = await fetch(u("chat/stream"), { method: "POST", headers: headers(), body: JSON.stringify({ question, session_id: sessionId }) });
   if (!r.ok || !r.body) { const e = new Error("stream unavailable"); e.fallback = true; throw e; }
   const reader = r.body.getReader(), dec = new TextDecoder();
   let buf = "", final = null;
-  const step = (text) => live.progress.append(el("span", { class: "step", text }));
+  const step = (text) => { live.progress.textContent = text; };
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
@@ -179,11 +187,11 @@ async function askStream(question, live) {
       const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
       if (!chunk.startsWith("data:")) continue;
       const ev = JSON.parse(chunk.slice(5));
-      if (ev.type === "route") step(`${ev.intent} · ${ev.tier} tier${ev.local_only ? " · kept local" : ""}`);
-      else if (ev.type === "model") step(`${ev.attempt > 1 ? "falling back to " : ""}${ev.model} (${ev.local ? "local" : "cloud"})`);
+      if (ev.type === "route") step(ev.local_only ? "Keeping this on the local model" : "Reading the question");
+      else if (ev.type === "model") step(ev.attempt > 1 ? "Trying another model" : "Asking the model");
       else if (ev.type === "tool" && ev.state === "start") step((TOOL_LABEL[ev.tool] || ev.tool) + "…");
       else if (ev.type === "text") { live.bubble.replaceChildren(renderAnswer(ev.text)); live.wrap.scrollIntoView({ block: "end" }); }
-      else if (ev.type === "reset") live.bubble.textContent = "…";
+      else if (ev.type === "reset") live.bubble.replaceChildren(typing());
       else if (ev.type === "done") final = ev.payload;
       else if (ev.type === "error") throw new Error(ev.message);
     }
@@ -632,8 +640,46 @@ async function loadModels() {
 }
 loaders.models = loadModels;
 
+// ---------------- ARCHITECTURE
+function archLive(id, text) { const n = $("#" + id); if (!n) return; n.textContent = text; n.hidden = !text; }
+async function loadArchitecture() {
+  let h, r;
+  try { [h, r] = await Promise.all([api("/health"), api("/router")]); $("#arch-error").hidden = true; }
+  catch (e) { const w = $("#arch-error"); w.textContent = "Live values could not be loaded: " + e.message; w.hidden = false; return; }
+  const chain = r.tiers.strong.length ? r.tiers.strong : r.tiers.fast;
+  const modelsText = chain.length ? chain.join(", then ") : "No model configured: answers quote the documents directly";
+  if (h.public_demo) {
+    $("#arch-flow").replaceChildren(
+      el("div", {class: "arch-node"}, el("strong", {text: "Your browser"}), el("span", {text: "Single-page app with no external scripts"})),
+      el("span", {class: "arch-arrow", "aria-hidden": "true", text: "→"}),
+      el("div", {class: "arch-node"}, el("strong", {text: "gopalbagaswar.com/rag-assistant"}), el("span", {text: "Cloudflare Worker: forwards only this path, adds the origin key, strips cookies"})),
+      el("span", {class: "arch-arrow", "aria-hidden": "true", text: "→"}),
+      el("div", {class: "arch-node"}, el("strong", {text: "Vercel"}), el("span", {text: "FastAPI app in Python with the demo data loaded in memory, read-only"})),
+      el("span", {class: "arch-arrow", "aria-hidden": "true", text: "→"}),
+      el("div", {class: "arch-node"}, el("strong", {text: "AI models"}), el("span", {text: modelsText}))
+    );
+  } else {
+    $("#arch-flow").replaceChildren(
+      el("div", {class: "arch-node"}, el("strong", {text: "Your browser"}), el("span", {text: "Single-page app with no external scripts"})),
+      el("span", {class: "arch-arrow", "aria-hidden": "true", text: "→"}),
+      el("div", {class: "arch-node"}, el("strong", {text: "This computer"}), el("span", {text: "FastAPI app on 127.0.0.1. Documents, database and search index stay here"})),
+      el("span", {class: "arch-arrow", "aria-hidden": "true", text: "→"}),
+      el("div", {class: "arch-node"}, el("strong", {text: "AI models"}), el("span", {text: modelsText}))
+    );
+  }
+  archLive("arch-live-cache", h.answers_cached === null || h.answers_cached === undefined ? "Off: only the public demo reuses answers" : `${h.answers_cached} answers ready`);
+  archLive("arch-live-retrieval", `${h.documents} documents, ${h.doc_chunks} passages, vectors: ${h.embedding}`);
+  const p = r.privacy;
+  archLive("arch-live-privacy", `Hosted AI ${p.cloud_ai_allowed ? "allowed" : "blocked"}. Data it may see: ${p.cloud_allowed_data.join(", ") || "none"}. Masking ${p.redact_pii ? "on" : "off"}.`);
+  archLive("arch-live-models", chain.length ? chain.map((m, i) => `${i + 1}. ${m}`).join("   ") : "No model configured");
+  archLive("arch-live-tools", `${h.tables.length} tables in DuckDB`);
+  archLive("arch-live-invoices", `${h.invoices} invoices loaded`);
+  archLive("arch-live-qbo", h.qbo.mode === "mock" ? "Fictional sandbox company, offline" : `${h.qbo.mode}${h.qbo.connected ? "" : ", not connected"}`);
+}
+loaders.architecture = loadArchitecture;
+
 // ---------------- boot
 refreshHealth(); setInterval(refreshHealth, 15000);
 loadInvoices().catch(() => {});
-const start = (location.hash || "#overview").slice(1);
-show(document.getElementById("tab-" + start) ? start : "overview");
+const start = (location.hash || "#ask").slice(1);
+show(document.getElementById("tab-" + start) ? start : "ask");
