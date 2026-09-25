@@ -18,3 +18,14 @@ scripts
 Dockerfile
 docker-compose.yml
 docker-compose.ollama.yml
+.planning
+.claude
+.gstack
+logs
+codedb.snapshot
+.coverage
+*.log
+evaluation.json
+.mypy_cache
+node_modules
+.playwright-mcp

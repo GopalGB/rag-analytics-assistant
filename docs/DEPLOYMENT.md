@@ -35,13 +35,29 @@ Set these environment variables (secrets in Vercel's encrypted settings, never i
 | `EMBEDDING_PROVIDER` | `local` | offline hashing vectors (no embedding server) |
 | `ALLOW_CLOUD_AI` | `true` | the only model is a hosted one |
 | `GROQ_API_KEY` | secret | or any other provider key |
-| `LLM_MODELS_STRONG` / `LLM_MODELS_FAST` | `groq:openai/gpt-oss-120b` | the model used in the demo |
+| `LLM_MODELS_STRONG` / `LLM_MODELS_FAST` | `groq:openai/gpt-oss-120b,groq:openai/gpt-oss-20b,groq:qwen/qwen3.8-27b` | a fallback chain: each free-tier model has its own quota |
+| `INVOICE_AI_ASSIST` | `false` | the rules extractor already reads every sample invoice; skipping the AI pass keeps cold starts under a second and saves quota |
+| `ANSWER_CACHE_SEED` | `data/demo_answer_cache.json` | pre-generated answers to the suggested questions (see below) |
+| `RATE_LIMIT_MAX_WAIT_SECONDS` | `8` (default) | when every model is rate limited, wait once if the provider says it frees up within this many seconds |
 | `CLOUD_ALLOWED_DATA` | `documents,invoices,accounting,bank` | acceptable **only** because every file is synthetic or public |
 | `REDACT_PII` | `true` | still mask emails/phones/accounts |
 | `APP_API_KEY` | secret | the Worker adds it; direct calls to the Vercel URL are refused |
 | `TRUST_LOOPBACK` | `false` | never exempt anyone from the key behind a proxy |
 | `ALLOWED_HOSTS` | `rag-analytics-assistant.vercel.app` | Host allowlist (DNS-rebinding defence) |
 | `ALLOWED_ORIGINS` | `https://gopalbagaswar.com` | the browser origin the Worker serves the UI from |
+
+**Answer cache.** The demo is stateless and read-only, so the same question always deserves the same
+answer. Model answers are kept in memory (`ANSWER_CACHE_SIZE`, default 256) and repeats are served
+instantly with a "cached answer" label; guardrails still run first, and refusals or fallbacks are never
+cached. `scripts/build_answer_cache.py` asks every suggested question once through the real pipeline and
+writes `data/demo_answer_cache.json` with a fingerprint of `data/sample/`; the seed is ignored if any
+document changed. Regenerate it after changing documents, prompts or models:
+
+```bash
+PUBLIC_DEMO=true DB_PATH=:memory: EMBEDDING_PROVIDER=local ALLOW_CLOUD_AI=true INVOICE_AI_ASSIST=false \
+CLOUD_ALLOWED_DATA=documents,invoices,accounting,bank REPORT_AS_OF=2026-07-15 GROQ_API_KEY=... \
+LLM_MODELS_STRONG=... LLM_MODELS_FAST=... python scripts/build_answer_cache.py --pace-seconds 25
+```
 
 No OCR engine is available on Vercel, so the scanned sample invoice is flagged "could not be read"
 there; everything else behaves as on the Mac.

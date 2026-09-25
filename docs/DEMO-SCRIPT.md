@@ -4,6 +4,11 @@ Start from a clean state: `make demo` (clears previous reviews, approvals, log a
 the server). Open <http://127.0.0.1:8000> and type a name in **You** (top right) — reviews and approvals
 are recorded against it.
 
+The app opens on **Ask**: the suggested questions are one click each, and every answer shows its
+sources as chips that open the original file. **Architecture** walks through how a question is
+answered (guardrails, routing, retrieval, privacy, model fallback, checks, activity log) with live
+values from the running deployment.
+
 ## 0. The overview (2 min)
 
 Start with **Needs your attention** on the Overview: one ranked list, each item with its source and the
@@ -15,7 +20,7 @@ door certificate and electrical sign-off, and the lease renewal notice due by 31
 the sentence it came from. **Month-end checklist →** opens the printable report. In **Ask**, *What needs my
 attention this week?* answers from the same list (with or without an AI model).
 
-**Overview** tab (opens first): money owed and owing, cash, overdue items, then charts: payables and
+**Overview** tab: money owed and owing, cash, overdue items, then charts: payables and
 receivables by age, spend by supplier, cash flow from the bank statement, and budget vs. actual with the
 car park resurfacing line over budget. Hover or tab onto a bar for its value; **Table** shows the same
 numbers as text. Below, the bank statement is matched line by line to QuickBooks: Harbor Waste's bill

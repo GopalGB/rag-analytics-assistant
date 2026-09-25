@@ -1,0 +1,715 @@
+{
+ "fingerprint": "e53bb68537db10f4637037dde8497a34bd6affe931afce0077c939ae4c8af30c",
+ "generated_at": "2026-09-25T02:19:31+00:00",
+ "models": [
+  "groq:qwen/qwen3.8-27b"
+ ],
+ "answers": {
+  "what needs my attention this week": {
+   "text": "Here's what needs your attention this week (as of 15 Jul 2026). **8 critical items, ~$30,053 at stake.** Figures are drafts for review by a responsible person.\n\n**Critical \u2014 money & reconciliation**\n1. **Car park resurfacing over budget by $6,400** \u2014 $61,400 committed vs $55,000 budget (Riverside). Source: `project_budget_riverside`.\n2. **Summit Ridge INV-10421 is a duplicate** \u2014 a resubmitted copy of an invoice already on file; make sure it isn't paid twice ($4,871.25). Source: invoices/summit_INV-10421_resubmitted.pdf.\n3. **BrightSpark BSC-118 ($984.25) not in QuickBooks** \u2014 23 business days past the 5-day recording policy. Source: invoices/brightspark_BSC-118.pdf.\n4. **Metro MOS-7781 ($689.42) not in QuickBooks** \u2014 38 business days past policy. Source: invoices/metro_MOS-7781.pdf.\n5. **Coastal Plumbing 5530 mismatch** \u2014 invoice says $2,310 but QuickBooks bill 103 is $2,130 ($180 gap). Source: invoices/coastal_5530.pdf.\n6. **Harbor Waste marked paid in QuickBooks but no bank payment found** (bill 106, $415, 28 May). Source: `bank_reconciliation`.\n\n**Critical \u2014 overdue deadlines (Riverside)**\n7. **Fire door inspection certificate** \u2014 overdue since 1 June (44 days). Source: Project_Status_Riverside_Renovation.pdf, p.1.\n8. **Electrical compliance sign-off (lobby lighting, Summit Ridge)** \u2014 was due 30 June (15 days ago). Source: Project_Status_Riverside_Renovation.pdf, p.1.\n\n**Also worth a look (warnings)**\n- **Pioneer Concrete PCW-0192 ($12,990)** \u2014 OCR-read from a scan, verify figures; also needs director approval + two quotes (over $5,000). Sources: invoices/pioneer_PCW-0192_scanned.pdf; Expense_and_Invoice_Approval_Policy.md.\n- **Oakridge Accounting owes $6,200, 44 days overdue** (invoice 1002, due 1 June). Source: `qbo_invoices`.\n- **Northgate Security NSS/2026/044 ($3,105.75)** \u2014 QuickBooks bill with no supporting invoice on file. Source: `qbo_bills`.\n\nWant me to pull the full detail on any of these (e.g., the bank reconciliation lines or the budget breakdown)?",
+   "route": "agent",
+   "sql": null,
+   "columns": [],
+   "rows": [],
+   "row_count": 0,
+   "sources": [],
+   "actions": [],
+   "routing": {
+    "intent": "accounting",
+    "tier": "strong",
+    "tools": [
+     "run_sql",
+     "search_docs",
+     "attention_items"
+    ],
+    "confidence": 0.75,
+    "method": "rules",
+    "reason": "keywords point to accounting",
+    "local_only": false,
+    "purpose": "answer:accounting",
+    "model": "groq:qwen/qwen3.8-27b",
+    "model_local": false,
+    "fallbacks": 0,
+    "attempts": [
+     {
+      "model": "groq:qwen/qwen3.8-27b",
+      "local": false,
+      "ok": true,
+      "ms": 2728,
+      "error": null,
+      "input_tokens": 6210,
+      "output_tokens": 687,
+      "cost_usd": null
+     }
+    ],
+    "privacy": {
+     "local_only": false,
+     "reasons": [],
+     "data_classes": [
+      "accounting",
+      "bank"
+     ],
+     "redact": true,
+     "high_risk": [],
+     "sensitive": false,
+     "redactions": 0,
+     "withheld_passages": 0
+    },
+    "tool_calls": [
+     {
+      "tool": "attention_items",
+      "ok": true,
+      "error": null
+     }
+    ]
+   },
+   "checks": {
+    "citations": 0,
+    "unverified_citations": []
+   },
+   "cached_at": "2026-09-25T01:57:13+00:00"
+  },
+  "what are the payment terms in the summit ridge supply agreement": {
+   "text": "The payment terms in the Summit Ridge supply agreement are **Net 30** \u2014 invoices are payable within 30 days of the invoice date [Supplier_Agreement_Summit_Ridge_Electrical.pdf, p.1].\n\nSupporting points:\n- The agreement is between Harbourline Property Group (Customer) and Summit Ridge Electrical Supply LLC (Supplier), effective 1 January 2026 [Supplier_Agreement_Summit_Ridge_Electrical.pdf, p.1].\n- The same Net 30 term appears on the supplier's invoice INV-10421 (invoice date May 4, 2026, due June 3, 2026) [summit_INV-10421.pdf, p.1].\n- The passage in the agreement is cut off mid-sentence after \"Every i\u2026\", so if there are additional payment-related clauses (e.g., late-payment terms), I couldn't confirm them from the loaded text. Let me know if you'd like me to search for more.",
+   "route": "agent",
+   "sql": null,
+   "columns": [],
+   "rows": [],
+   "row_count": 0,
+   "sources": [
+    {
+     "file": "documents/Supplier_Agreement_Summit_Ridge_Electrical.pdf",
+     "page": 1,
+     "chunk_id": 0,
+     "score": 0.98355,
+     "cite": "Supplier_Agreement_Summit_Ridge_Electrical.pdf, p.1",
+     "snippet": "Supply Agreement This Supply Agreement is made between Harbourline Property Group (the \"Customer\") and Summit Ridge Electrical Supply LLC (the \"Supplier\"). Effective date: 1 January 2026. 1. Term The agreement runs for an initial term of 24 months from the effective date and renews automatically for successive 12-month"
+    },
+    {
+     "file": "invoices/summit_INV-10421.pdf",
+     "page": 1,
+     "chunk_id": 0,
+     "score": 0.7783,
+     "cite": "summit_INV-10421.pdf, p.1",
+     "snippet": "Summit Ridge Electrical Supply LLC INVOICE 410 Foundry Road Easton Heights, CA 90233 Invoice Number: INV-10421 Bill To: Invoice Date: May 4, 2026 Harbourline Property Group Due Date: June 3, 2026 Suite 400, 88 Harbour Street PO Number: PO-2026-031 Port Easton, CA 90210 Description Qty Unit price Amount Copper cable 2.5"
+    }
+   ],
+   "actions": [],
+   "routing": {
+    "intent": "documents",
+    "tier": "fast",
+    "tools": [
+     "search_docs"
+    ],
+    "confidence": 0.95,
+    "method": "model",
+    "reason": "The user is asking for specific terms (payment terms) contained within a named contract (Summit Ridge supply agreement), which falls under questions about contracts and project records.",
+    "local_only": false,
+    "purpose": "answer:documents",
+    "model": "groq:qwen/qwen3.8-27b",
+    "model_local": false,
+    "fallbacks": 0,
+    "attempts": [
+     {
+      "model": "groq:qwen/qwen3.8-27b",
+      "local": false,
+      "ok": true,
+      "ms": 1730,
+      "error": null,
+      "input_tokens": 2662,
+      "output_tokens": 224,
+      "cost_usd": null
+     }
+    ],
+    "privacy": {
+     "local_only": false,
+     "reasons": [],
+     "data_classes": [
+      "documents"
+     ],
+     "redact": true,
+     "high_risk": [],
+     "sensitive": false,
+     "redactions": 0,
+     "withheld_passages": 0
+    },
+    "tool_calls": []
+   },
+   "checks": {
+    "citations": 3,
+    "unverified_citations": []
+   },
+   "cached_at": "2026-09-25T01:58:21+00:00"
+  },
+  "when does the office lease expire and what notice is needed to renew": {
+   "text": "The office lease expires on **30 June 2029**, and to renew you must give **written notice at least 6 months before expiry \u2014 no later than 31 December 2028** [Office_Lease_Summary.docx, p.1].\n\nSupporting details:\n- Term: 5 years, commencing 1 July 2024 [Office_Lease_Summary.docx, p.1].\n- Renewal option: one further term of 5 years [Office_Lease_Summary.docx, p.1].\n- Landlord: Pier Nine Holdings; Tenant: Harbourline Property Group [Office_Lease_Summary.docx, p.1].\n\nNote: this is a fictional demo document with synthetic data, so treat the figures as illustrative only.",
+   "route": "agent",
+   "sql": null,
+   "columns": [],
+   "rows": [],
+   "row_count": 0,
+   "sources": [
+    {
+     "file": "documents/Office_Lease_Summary.docx",
+     "page": null,
+     "chunk_id": 0,
+     "score": 0.7,
+     "cite": "Office_Lease_Summary.docx",
+     "snippet": "Office Lease Summary - Suite 400, 88 Harbour Street Fictional demo document - synthetic data only Landlord: Pier Nine Holdings (fictional). Tenant: Harbourline Property Group. Key dates Commencement date: 1 July 2024. Expiry date: 30 June 2029. Term: 5 years. Renewal option: one further term of 5 years. The tenant must"
+    }
+   ],
+   "actions": [],
+   "routing": {
+    "intent": "documents",
+    "tier": "fast",
+    "tools": [
+     "search_docs"
+    ],
+    "confidence": 0.7,
+    "method": "rules",
+    "reason": "keywords point to documents",
+    "local_only": false,
+    "purpose": "answer:documents",
+    "model": "groq:qwen/qwen3.8-27b",
+    "model_local": false,
+    "fallbacks": 0,
+    "attempts": [
+     {
+      "model": "groq:qwen/qwen3.8-27b",
+      "local": false,
+      "ok": true,
+      "ms": 992,
+      "error": null,
+      "input_tokens": 2126,
+      "output_tokens": 179,
+      "cost_usd": null
+     }
+    ],
+    "privacy": {
+     "local_only": false,
+     "reasons": [],
+     "data_classes": [
+      "documents"
+     ],
+     "redact": true,
+     "high_risk": [],
+     "sensitive": false,
+     "redactions": 0,
+     "withheld_passages": 0
+    },
+    "tool_calls": []
+   },
+   "checks": {
+    "citations": 4,
+    "unverified_citations": []
+   },
+   "cached_at": "2026-09-25T01:59:27+00:00"
+  },
+  "what tasks are outstanding on the riverside renovation project": {
+   "text": "Here are the outstanding tasks on the Riverside Apartments renovation (report dated 15 June 2026):\n\n1. **Electrical compliance sign-off for lobby lighting** (Summit Ridge Electrical) \u2013 due 30 June 2026 [Project_Status_Riverside_Renovation.pdf, p.1]\n2. **Landscaping phase 2 quote** from Greenleaf Grounds Care \u2013 requested, not yet received [Project_Status_Riverside_Renovation.pdf, p.1]\n3. **Fire door inspection certificate** \u2013 OVERDUE since 1 June 2026 [Project_Status_Riverside_Renovation.pdf, p.1]\n4. **Lift modernisation approval** \u2013 waiting on board decision at the July meeting [Project_Status_Riverside_Renovation.pdf, p.1]\n5. **Final defects walk-through** \u2013 not yet scheduled [Project_Status_Riverside_Renovation.pdf, p.1]\n\nNote: The project is currently **amber**, about 2 weeks behind schedule due to the delayed electrical sign-off, with a forecast $6,400 (3.5%) over budget [Project_Status_Riverside_Renovation.pdf, p.1].",
+   "route": "agent",
+   "sql": null,
+   "columns": [],
+   "rows": [],
+   "row_count": 0,
+   "sources": [
+    {
+     "file": "documents/Project_Status_Riverside_Renovation.pdf",
+     "page": 2,
+     "chunk_id": 2,
+     "score": 0.85988,
+     "cite": "Project_Status_Riverside_Renovation.pdf, p.2",
+     "snippet": "Risks Budget overrun if the lift modernisation is approved in this financial year. Missing fire door certificate could delay the occupancy sign-off. Decisions needed Approve the $6,400 budget variation. Confirm whether the lift modernisation is in scope. Fictional demo document - synthetic data only - page 2 of 2"
+    },
+    {
+     "file": "documents/Project_Status_Riverside_Renovation.pdf",
+     "page": 1,
+     "chunk_id": 0,
+     "score": 0.83713,
+     "cite": "Project_Status_Riverside_Renovation.pdf, p.1",
+     "snippet": "Project Status Report Project: Riverside Apartments - Common Area Renovation. Report date: 15 June 2026. Project manager: Facilities team. Budget Approved budget: $185,000. Committed to date: $142,300. Spent to date: $118,650. Forecast at completion: $191,400, which is $6,400 (3.5%) over budget, mainly due to the car p"
+    },
+    {
+     "file": "documents/Project_Status_Riverside_Renovation.pdf",
+     "page": 1,
+     "chunk_id": 1,
+     "score": 0.42908,
+     "cite": "Project_Status_Riverside_Renovation.pdf, p.1",
+     "snippet": "hase 2 quote from Greenleaf Grounds Care - requested, not yet received. 3. Fire door inspection certificate - OVERDUE since 1 June 2026. 4. Lift modernisation approval - waiting on board decision at the July meeting. 5. Final defects walk-through - not yet scheduled. Fictional demo document - synthetic data only - page"
+    }
+   ],
+   "actions": [],
+   "routing": {
+    "intent": "documents",
+    "tier": "fast",
+    "tools": [
+     "search_docs"
+    ],
+    "confidence": 0.5,
+    "method": "rules",
+    "reason": "weak keyword signal for documents",
+    "local_only": false,
+    "purpose": "answer:documents",
+    "model": "groq:qwen/qwen3.8-27b",
+    "model_local": false,
+    "fallbacks": 0,
+    "attempts": [
+     {
+      "model": "groq:qwen/qwen3.8-27b",
+      "local": false,
+      "ok": true,
+      "ms": 1981,
+      "error": null,
+      "input_tokens": 5060,
+      "output_tokens": 467,
+      "cost_usd": null
+     }
+    ],
+    "privacy": {
+     "local_only": false,
+     "reasons": [],
+     "data_classes": [
+      "documents"
+     ],
+     "redact": true,
+     "high_risk": [],
+     "sensitive": false,
+     "redactions": 0,
+     "withheld_passages": 0
+    },
+    "tool_calls": [
+     {
+      "tool": "search_docs",
+      "ok": true,
+      "error": null
+     }
+    ]
+   },
+   "checks": {
+    "citations": 6,
+    "unverified_citations": []
+   },
+   "cached_at": "2026-09-25T02:01:05+00:00"
+  },
+  "which supplier invoices don't match quickbooks": {
+   "text": "**Direct answer:** One invoice has a real amount mismatch, and several others don't match QuickBooks for other reasons (missing in QBO, missing document, or a duplicate). Figures below are from the `invoice_reconciliation` table and are drafts for review.\n\n**Amount mismatch (issue):**\n- **Coastal Plumbing & Heating Ltd \u2014 invoice 5530**: document says $2,310.00 but QuickBooks bill 103 is $2,130.00 \u2014 a **$180.00 difference**.\n\n**Not in QuickBooks (may need to be recorded as bills):**\n- **BrightSpark Cleaning Co \u2014 BSC-118**: $984.25, no matching bill found.\n- **Metro Office Solutions Inc \u2014 MOS-7781**: $689.42, no matching bill found.\n\n**In QuickBooks but no supporting invoice document on file:**\n- **Lakeside Catering \u2014 LC-3390**: $1,187.60\n- **Northgate Security Systems \u2014 NSS/2026/044**: $3,105.75\n- **Allied Fuel Cards \u2014 AFC-3302**: $940.00\n\n**Duplicate (issue):**\n- **Summit Ridge Electrical Supply LLC \u2014 INV-10421 (resubmitted)**: $4,871.25, flagged as a duplicate of the original `summit_INV-10421.pdf` \u2014 make sure it isn't paid twice.\n\n**Uncertain match (warning):**\n- **Harbor Waste Services \u2014 no invoice number on document**: $415.00, amounts and dates line up with QuickBooks bill 106, but the missing invoice number means it can't be confirmed as a match.\n\nPer the approval policy, invoices must match an approved PO and duplicates (same supplier + invoice number) must never be paid twice \u2014 the Coastal amount gap and the Summit duplicate are the two items most worth resolving before payment.",
+   "route": "agent",
+   "sql": "SELECT file, supplier, invoice_number, document_total, qbo_total, difference, status, severity, detail FROM invoice_reconciliation WHERE status != 'matched' ORDER BY ABS(difference) DESC",
+   "columns": [
+    "file",
+    "supplier",
+    "invoice_number",
+    "document_total",
+    "qbo_total",
+    "difference",
+    "status",
+    "severity",
+    "detail"
+   ],
+   "rows": [
+    {
+     "file": "invoices/coastal_5530.pdf",
+     "supplier": "Coastal Plumbing & Heating Ltd",
+     "invoice_number": "5530",
+     "document_total": 2310.0,
+     "qbo_total": 2130.0,
+     "difference": 180.0,
+     "status": "amount_mismatch",
+     "severity": "issue",
+     "detail": "QuickBooks bill 103 is 2,130.00 but the invoice says 2,310.00."
+    },
+    {
+     "file": "invoices/harbor_waste_no_number.pdf",
+     "supplier": "Harbor Waste Services",
+     "invoice_number": null,
+     "document_total": 415.0,
+     "qbo_total": 415.0,
+     "difference": 0.0,
+     "status": "possible_match",
+     "severity": "warning",
+     "detail": "Probably QuickBooks bill 106 (same supplier, amount and date), but the invoice number is missing on the document."
+    },
+    {
+     "file": "invoices/brightspark_BSC-118.pdf",
+     "supplier": "BrightSpark Cleaning Co",
+     "invoice_number": "BSC-118",
+     "document_total": 984.25,
+     "qbo_total": null,
+     "difference": null,
+     "status": "not_in_quickbooks",
+     "severity": "warning",
+     "detail": "No matching bill found in QuickBooks. It may need to be recorded."
+    },
+    {
+     "file": "invoices/metro_MOS-7781.pdf",
+     "supplier": "Metro Office Solutions Inc",
+     "invoice_number": "MOS-7781",
+     "document_total": 689.42,
+     "qbo_total": null,
+     "difference": null,
+     "status": "not_in_quickbooks",
+     "severity": "warning",
+     "detail": "No matching bill found in QuickBooks. It may need to be recorded."
+    },
+    {
+     "file": null,
+     "supplier": "Lakeside Catering",
+     "invoice_number": "LC-3390",
+     "document_total": null,
+     "qbo_total": 1187.6,
+     "difference": null,
+     "status": "no_document",
+     "severity": "warning",
+     "detail": "Bill exists in QuickBooks but no supporting invoice document is on file."
+    },
+    {
+     "file": null,
+     "supplier": "Northgate Security Systems",
+     "invoice_number": "NSS/2026/044",
+     "document_total": null,
+     "qbo_total": 3105.75,
+     "difference": null,
+     "status": "no_document",
+     "severity": "warning",
+     "detail": "Bill exists in QuickBooks but no supporting invoice document is on file."
+    },
+    {
+     "file": null,
+     "supplier": "Allied Fuel Cards",
+     "invoice_number": "AFC-3302",
+     "document_total": null,
+     "qbo_total": 940.0,
+     "difference": null,
+     "status": "no_document",
+     "severity": "warning",
+     "detail": "Bill exists in QuickBooks but no supporting invoice document is on file."
+    },
+    {
+     "file": "invoices/summit_INV-10421_resubmitted.pdf",
+     "supplier": "Summit Ridge Electrical Supply LLC",
+     "invoice_number": "INV-10421",
+     "document_total": 4871.25,
+     "qbo_total": null,
+     "difference": null,
+     "status": "duplicate",
+     "severity": "issue",
+     "detail": "Duplicate of invoices/summit_INV-10421.pdf. Make sure it is not paid twice."
+    }
+   ],
+   "row_count": 8,
+   "sources": [],
+   "actions": [],
+   "routing": {
+    "intent": "accounting",
+    "tier": "strong",
+    "tools": [
+     "run_sql",
+     "search_docs",
+     "attention_items"
+    ],
+    "confidence": 0.75,
+    "method": "rules",
+    "reason": "keywords point to accounting",
+    "local_only": false,
+    "purpose": "answer:accounting",
+    "model": "groq:qwen/qwen3.8-27b",
+    "model_local": false,
+    "fallbacks": 0,
+    "attempts": [
+     {
+      "model": "groq:qwen/qwen3.8-27b",
+      "local": false,
+      "ok": true,
+      "ms": 2292,
+      "error": null,
+      "input_tokens": 5617,
+      "output_tokens": 517,
+      "cost_usd": null
+     }
+    ],
+    "privacy": {
+     "local_only": false,
+     "reasons": [],
+     "data_classes": [
+      "accounting",
+      "bank"
+     ],
+     "redact": true,
+     "high_risk": [],
+     "sensitive": false,
+     "redactions": 0,
+     "withheld_passages": 0
+    },
+    "tool_calls": [
+     {
+      "tool": "run_sql",
+      "ok": true,
+      "error": null
+     }
+    ]
+   },
+   "checks": {
+    "citations": 0,
+    "unverified_citations": []
+   },
+   "cached_at": "2026-09-25T02:03:53+00:00"
+  },
+  "what is the monthly fee in the coastal plumbing maintenance agreement": {
+   "text": "The monthly preventive maintenance fee is **$2,310.00**, invoiced monthly in arrears with no sales tax on labour [Maintenance_Agreement_Coastal_Plumbing.pdf, p.1].\n\nThis matches the amount billed on the May invoice (Invoice 5530, $2,310.00) [coastal_5530.pdf, p.1].",
+   "route": "agent",
+   "sql": null,
+   "columns": [],
+   "rows": [],
+   "row_count": 0,
+   "sources": [
+    {
+     "file": "documents/Maintenance_Agreement_Coastal_Plumbing.pdf",
+     "page": 1,
+     "chunk_id": 0,
+     "score": 1.0,
+     "cite": "Maintenance_Agreement_Coastal_Plumbing.pdf, p.1",
+     "snippet": "Maintenance Services Agreement Maintenance Services Agreement between Harbourline Property Group and Coastal Plumbing & Heating Ltd. Effective date: 1 March 2026. Term: 12 months. Scope Monthly preventive maintenance of plumbing, hot-water and heating systems at all managed properties, plus reactive repairs on request."
+    },
+    {
+     "file": "invoices/coastal_5530.pdf",
+     "page": 1,
+     "chunk_id": 0,
+     "score": 0.58322,
+     "cite": "coastal_5530.pdf, p.1",
+     "snippet": "Coastal Plumbing & Heating Ltd INVOICE 77 Pier Road Port Easton, CA 90212 Invoice Number: 5530 Bill To: Invoice Date: 18 May 2026 Harbourline Property Group Due Date: 17 June 2026 Suite 400, 88 Harbour Street Port Easton, CA 90210 Description Qty Unit price Amount Preventive maintenance - May (per agreement) 1 2,310.00"
+    }
+   ],
+   "actions": [],
+   "routing": {
+    "intent": "documents",
+    "tier": "fast",
+    "tools": [
+     "search_docs"
+    ],
+    "confidence": 0.65,
+    "method": "rules",
+    "reason": "keywords point to documents",
+    "local_only": false,
+    "purpose": "answer:documents",
+    "model": "groq:qwen/qwen3.8-27b",
+    "model_local": false,
+    "fallbacks": 0,
+    "attempts": [
+     {
+      "model": "groq:qwen/qwen3.8-27b",
+      "local": false,
+      "ok": true,
+      "ms": 703,
+      "error": null,
+      "input_tokens": 2299,
+      "output_tokens": 90,
+      "cost_usd": null
+     }
+    ],
+    "privacy": {
+     "local_only": false,
+     "reasons": [],
+     "data_classes": [
+      "documents"
+     ],
+     "redact": true,
+     "high_risk": [],
+     "sensitive": false,
+     "redactions": 0,
+     "withheld_passages": 0
+    },
+    "tool_calls": []
+   },
+   "checks": {
+    "citations": 2,
+    "unverified_citations": []
+   },
+   "cached_at": "2026-09-25T02:06:13+00:00"
+  },
+  "who is our auditor": {
+   "text": "I couldn't find this in the loaded documents/data.\n\nNone of the loaded documents or database tables mention an auditor or audit firm for the company. The closest references are to a supplier agreement (Summit Ridge Electrical) and a sample invoice, neither of which identifies an auditor. If you have an audit engagement letter or a company registration document, I can check it once it's added.",
+   "route": "agent",
+   "sql": null,
+   "columns": [],
+   "rows": [],
+   "row_count": 0,
+   "sources": [],
+   "actions": [],
+   "routing": {
+    "intent": "documents",
+    "tier": "fast",
+    "tools": [
+     "search_docs"
+    ],
+    "confidence": 0.9,
+    "method": "model",
+    "reason": "The question asks for specific information regarding the company's external auditor, which is typically found in corporate records, contracts, or policy documents.",
+    "local_only": false,
+    "purpose": "answer:documents",
+    "model": "groq:qwen/qwen3.8-27b",
+    "model_local": false,
+    "fallbacks": 0,
+    "attempts": [
+     {
+      "model": "groq:qwen/qwen3.8-27b",
+      "local": false,
+      "ok": true,
+      "ms": 1178,
+      "error": null,
+      "input_tokens": 5313,
+      "output_tokens": 118,
+      "cost_usd": null
+     }
+    ],
+    "privacy": {
+     "local_only": false,
+     "reasons": [],
+     "data_classes": [
+      "documents"
+     ],
+     "redact": true,
+     "high_risk": [],
+     "sensitive": false,
+     "redactions": 0,
+     "withheld_passages": 0
+    },
+    "tool_calls": [
+     {
+      "tool": "search_docs",
+      "ok": true,
+      "error": null
+     }
+    ]
+   },
+   "checks": {
+    "citations": 0,
+    "unverified_citations": []
+   },
+   "cached_at": "2026-09-25T02:07:20+00:00"
+  },
+  "which customers have overdue balances": {
+   "text": "Two customers have overdue balances (from the `qbo_invoices` table):\n\n- **Oakridge Accounting Partners** \u2014 $12,400.00 total overdue across two invoices:\n  - Invoice 1002: $6,200.00, due 2026-06-01, 44 days overdue\n  - Invoice 1005: $6,200.00, due 2026-07-01, 14 days overdue\n- **Juniper Yoga Studio** \u2014 $1,700.00 overdue:\n  - Invoice 1003: $1,700.00 balance (of $3,400.00 total), due 2026-05-31, 45 days overdue\n\nThese figures are drafts for review by a responsible person.",
+   "route": "agent",
+   "sql": "customer_name",
+   "columns": [
+    "customer_name",
+    "doc_number",
+    "txn_date",
+    "due_date",
+    "total",
+    "balance",
+    "days_overdue",
+    "status"
+   ],
+   "rows": [
+    {
+     "customer_name": "Juniper Yoga Studio",
+     "doc_number": "1003",
+     "txn_date": "2026-05-01",
+     "due_date": "2026-05-31",
+     "total": 3400.0,
+     "balance": 1700.0,
+     "days_overdue": 45,
+     "status": "open"
+    },
+    {
+     "customer_name": "Oakridge Accounting Partners",
+     "doc_number": "1002",
+     "txn_date": "2026-05-01",
+     "due_date": "2026-06-01",
+     "total": 6200.0,
+     "balance": 6200.0,
+     "days_overdue": 44,
+     "status": "open"
+    },
+    {
+     "customer_name": "Oakridge Accounting Partners",
+     "doc_number": "1005",
+     "txn_date": "2026-06-01",
+     "due_date": "2026-07-01",
+     "total": 6200.0,
+     "balance": 6200.0,
+     "days_overdue": 14,
+     "status": "open"
+    }
+   ],
+   "row_count": 3,
+   "sources": [],
+   "actions": [],
+   "routing": {
+    "intent": "accounting",
+    "tier": "strong",
+    "tools": [
+     "run_sql",
+     "search_docs",
+     "attention_items"
+    ],
+    "confidence": 0.75,
+    "method": "rules",
+    "reason": "keywords point to accounting",
+    "local_only": false,
+    "purpose": "answer:accounting",
+    "model": "groq:qwen/qwen3.8-27b",
+    "model_local": false,
+    "fallbacks": 0,
+    "attempts": [
+     {
+      "model": "groq:qwen/qwen3.8-27b",
+      "local": false,
+      "ok": true,
+      "ms": 79007,
+      "error": null,
+      "input_tokens": 16048,
+      "output_tokens": 392,
+      "cost_usd": null
+     }
+    ],
+    "privacy": {
+     "local_only": false,
+     "reasons": [],
+     "data_classes": [
+      "accounting",
+      "bank"
+     ],
+     "redact": true,
+     "high_risk": [],
+     "sensitive": false,
+     "redactions": 0,
+     "withheld_passages": 0
+    },
+    "tool_calls": [
+     {
+      "tool": "run_sql",
+      "ok": true,
+      "error": null
+     },
+     {
+      "tool": "run_sql",
+      "ok": false,
+      "error": "unsafe query rejected: only SELECT statements are allowed"
+     },
+     {
+      "tool": "run_sql",
+      "ok": false,
+      "error": "unsafe query rejected: only SELECT statements are allowed"
+     },
+     {
+      "tool": "run_sql",
+      "ok": false,
+      "error": "unsafe query rejected: only SELECT statements are allowed"
+     },
+     {
+      "tool": "run_sql",
+      "ok": false,
+      "error": "unsafe query rejected: only SELECT statements are allowed"
+     }
+    ]
+   },
+   "checks": {
+    "citations": 0,
+    "unverified_citations": []
+   },
+   "cached_at": "2026-09-25T02:14:31+00:00"
+  }
+ }
+}

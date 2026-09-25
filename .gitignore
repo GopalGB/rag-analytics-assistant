@@ -34,3 +34,13 @@ data/sample/uploads/
 
 # Backups (may contain documents and, with --include-env, API keys)
 backups/
+.gstack/
+
+# Local agent and tooling state (never shipped)
+.planning/
+.claude/
+.gstack/
+logs/
+codedb.snapshot
+.coverage
+.playwright-mcp/
