@@ -278,3 +278,26 @@ def test_prefetched_passages_count_as_already_shown(store, retriever):
     AgentEngine(store=store, retriever=retriever, guard=InputGuard(), llm=Searcher(),
                 memory=ConversationMemory(max_turns=0)).answer("s", "What does baseline mean?")
     assert "Baseline means" not in seen["result"]["results"][0]["text"]
+
+
+def test_only_passages_the_model_received_count_as_shown(tmp_path, store):
+    """Tool results are cut at TOOL_RESULT_CHARS; a passage past the cut was never seen, so it is re-sent."""
+    from app.agent.tools import ToolBox
+    from app.data import ingest
+    from app.llm.schemas import TOOL_RESULT_CHARS
+    from app.rag.embeddings import EmbeddingService
+    from app.rag.retriever import Retriever
+
+    docs = tmp_path / "many"
+    docs.mkdir()
+    for i in range(10):
+        (docs / f"clause_{i}.md").write_text(f"Retention clause {i}: " + ("keep records for years. " * 30))
+    tb = ToolBox(store, Retriever(EmbeddingService(provider="local", dim=128)).build(ingest.load_chunks(str(docs))))
+    first = tb.run("search_docs", {"query": "retention clause keep records", "k": 10})
+    assert len(json.dumps(first)) > TOOL_RESULT_CHARS  # the model receives only the first part
+    again = tb.run("search_docs", {"query": "retention clause keep records", "k": 10})
+    received = json.dumps(first)[:TOOL_RESULT_CHARS]
+    for old, new in zip(first["results"], again["results"], strict=True):
+        if new["text"] == "(already shown above)":
+            assert old["text"] in received  # never claim "shown" for text the model did not get
+    assert any(r["text"] != "(already shown above)" for r in again["results"])

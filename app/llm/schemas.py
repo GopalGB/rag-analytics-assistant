@@ -22,6 +22,10 @@ def _nullish(v: Any) -> Any:
 
 
 # --------------------------------------------------------------------------- tool arguments
+# A tool result handed back to the model is cut to this many characters (every tool turn resends it).
+TOOL_RESULT_CHARS = 8000
+
+
 class RunSqlArgs(BaseModel):
     """Run ONE read-only DuckDB SELECT over the available tables and return rows. No DDL/DML, no
     file-reading functions, single statement only."""

@@ -38,6 +38,7 @@ from typing import Any, Protocol
 from urllib.parse import urlparse
 
 from app.llm import usage
+from app.llm.schemas import TOOL_RESULT_CHARS
 
 
 class LLMError(RuntimeError):
@@ -312,7 +313,7 @@ class OpenAICompatLLM:
                 except json.JSONDecodeError:
                     args = {"__invalid_json__": fn.get("arguments")}
                 result = toolbox.run(fn.get("name", ""), args)
-                messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "content": json.dumps(result, default=str)[:8000]})
+                messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "content": json.dumps(result, default=str)[:TOOL_RESULT_CHARS]})
         final = call(messages + [{"role": "user", "content": "Give your best final answer now."}], None)
         return strip_tool_markup(final.get("content") or "")
 
@@ -490,7 +491,7 @@ class AnthropicLLM:
             messages.append({"role": "assistant", "content": content})
             messages.append({"role": "user", "content": [
                 {"type": "tool_result", "tool_use_id": b["id"],
-                 "content": json.dumps(toolbox.run(b["name"], b.get("input") or {}), default=str)[:8000]}
+                 "content": json.dumps(toolbox.run(b["name"], b.get("input") or {}), default=str)[:TOOL_RESULT_CHARS]}
                 for b in uses
             ]})
         # The history now holds tool_use/tool_result blocks, so the tools must still be defined; tool_choice

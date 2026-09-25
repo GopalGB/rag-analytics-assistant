@@ -16,13 +16,22 @@ active, to the data classes the privacy policy allows (privacy guard).
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from pydantic import ValidationError
 
 from app.data.store import DataStore, UnsafeQueryError
 from app.llm.privacy import PrivacyGuard
-from app.llm.schemas import TOOL_ARGS, AttentionArgs, ProposeActionArgs, RunSqlArgs, SearchDocsArgs, tool_spec
+from app.llm.schemas import (
+    TOOL_ARGS,
+    TOOL_RESULT_CHARS,
+    AttentionArgs,
+    ProposeActionArgs,
+    RunSqlArgs,
+    SearchDocsArgs,
+    tool_spec,
+)
 from app.rag.retriever import Retriever
 
 ALL_TOOLS = tuple(TOOL_ARGS)
@@ -154,18 +163,24 @@ class ToolBox:
         hits = self.retriever.search(query, k=k)
         results = []
         repeats = 0
+        size = len('{"results": []}')
         for h in hits:
             if self.privacy and not self.privacy.file_allowed(h.file):
                 self.privacy.withheld += 1
                 continue
             self.add_source(h)
-            if (h.file, h.chunk_id) in self.shown:
+            key = (h.file, h.chunk_id)
+            seen_before = key in self.shown
+            if seen_before:
                 repeats += 1
                 text = "(already shown above)"
             else:
-                self.shown.add((h.file, h.chunk_id))
                 text = self.privacy.outgoing(h.text) if self.privacy else h.text
-            results.append({"source": cite(h.file, h.page), "file": h.file, "page": h.page, "score": h.score, "text": text})
+            entry = {"source": cite(h.file, h.page), "file": h.file, "page": h.page, "score": h.score, "text": text}
+            size += len(json.dumps(entry, default=str)) + 2
+            if not seen_before and size <= TOOL_RESULT_CHARS - 300:  # only what survives the cut reaches the model
+                self.shown.add(key)
+            results.append(entry)
         out: dict[str, Any] = {"results": results}
         if repeats:
             out["note"] = (f"{repeats} passage(s) were already shown above: answer from them, or search with "
