@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from app.accounting import analytics, bank, insights, qbo_sync, reconcile, reports
-from app.agent.answer_cache import AnswerCache
+from app.agent.answer_cache import AnswerCache, seed_fingerprint
 from app.agent.engine import AgentEngine
 from app.agent.memory import ConversationMemory
 from app.approvals import ApprovalQueue
@@ -104,7 +104,8 @@ class Workspace:
             prefetch_passages=settings.prefetch_passages,
             insights=self.attention,
             answer_cache=AnswerCache.from_seed(_project_path(settings.answer_cache_seed), settings.data_dir,
-                                               settings.answer_cache_size) if settings.public_demo else None,
+                                               settings.answer_cache_size, fingerprint=seed_fingerprint(settings))
+            if settings.public_demo else None,
         )
         self.qbo = self._build_qbo()
         self.audit.record(

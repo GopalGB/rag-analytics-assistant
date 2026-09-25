@@ -207,7 +207,10 @@ class ModelRouter:
                     self.on_call(rec, purpose)
                 return result, trace
             wait = min(waits) if waits and None not in waits else None
-            if waited or wait is None or wait > self.rate_limit_max_wait:
+            # no second pass when waiting is switched off (cap <= 0) or the hint is unusable (negative);
+            # a zero hint with a positive cap means "retry now"
+            if (waited or wait is None or self.rate_limit_max_wait <= 0
+                    or not 0 <= wait <= self.rate_limit_max_wait):
                 break
             self.sleep(wait)  # every model is briefly rate limited: wait as asked, then one more pass
             waited = True

@@ -22,13 +22,13 @@ import argparse
 import json
 import sys
 import time
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from app.agent.answer_cache import cacheable, corpus_fingerprint, normalize  # noqa: E402
+from app.agent.answer_cache import UTC, cacheable, normalize, seed_fingerprint  # noqa: E402
 from app.config import Settings  # noqa: E402
 from app.llm import usage  # noqa: E402
 from app.main import examples  # noqa: E402
@@ -66,7 +66,7 @@ def main() -> int:
     output = Path(args.output)
     if args.only_missing and output.is_file():
         previous = json.loads(output.read_text(encoding="utf-8"))
-        if previous.get("fingerprint") == corpus_fingerprint(settings.data_dir):
+        if previous.get("fingerprint") == seed_fingerprint(settings):
             answers = previous.get("answers") or {}
     failed: list[str] = []
     asked = 0
@@ -90,7 +90,7 @@ def main() -> int:
             print(f"skipped {question}  ({tokens}; route={payload.get('route')}: {payload.get('text', '')[:120]!r})")
 
     out = {
-        "fingerprint": corpus_fingerprint(settings.data_dir),
+        "fingerprint": seed_fingerprint(settings),
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "models": sorted({p["routing"]["model"] for p in answers.values()}),
         "answers": answers,

@@ -7,10 +7,16 @@ from pathlib import Path
 
 import pytest
 
+from app.config import Settings
 from app.data import ingest
 from app.data.store import DataStore
 from app.rag.embeddings import EmbeddingService
 from app.rag.retriever import Retriever
+
+# A developer's .env (provider keys, PUBLIC_DEMO, ...) must not leak into tests: switch dotenv loading off
+# before any test module imports app.main and builds its Settings. Environment variables still apply, and
+# the fixture below clears the provider ones.
+Settings.model_config["env_file"] = None
 
 _PROVIDER_ENV = (
     "ANTHROPIC_API_KEY",

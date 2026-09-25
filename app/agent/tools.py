@@ -138,7 +138,6 @@ class ToolBox:
         return result
 
     def _run_sql(self, sql: str) -> dict[str, Any]:
-        self.last_sql = sql
         if self.privacy and self.privacy.cloud:
             try:
                 tables = self.store.referenced_tables(sql)
@@ -155,7 +154,9 @@ class ToolBox:
         except Exception as exc:  # surface DB errors to the model so it can retry
             return {"error": f"query failed: {exc}"}
         self._touch_tables(sql)
-        self.columns, self.rows = columns, rows
+        # the SQL shown with an answer is the query that produced its rows: a later rejected or failed
+        # attempt must not replace it
+        self.last_sql, self.columns, self.rows = sql, columns, rows
         preview = [dict(zip(columns, r, strict=False)) for r in rows[:50]]
         return {"columns": columns, "row_count": len(rows), "rows": preview}
 

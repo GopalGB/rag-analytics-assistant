@@ -1,5 +1,5 @@
 {
- "fingerprint": "e53bb68537db10f4637037dde8497a34bd6affe931afce0077c939ae4c8af30c",
+ "fingerprint": "93d254f92e95eab42a4509e912994b233aa3fd036582a0d77c12d5453e91b4b2",
  "generated_at": "2026-09-25T02:19:31+00:00",
  "models": [
   "groq:qwen/qwen3.8-27b"
@@ -590,7 +590,7 @@
   "which customers have overdue balances": {
    "text": "Two customers have overdue balances (from the `qbo_invoices` table):\n\n- **Oakridge Accounting Partners** \u2014 $12,400.00 total overdue across two invoices:\n  - Invoice 1002: $6,200.00, due 2026-06-01, 44 days overdue\n  - Invoice 1005: $6,200.00, due 2026-07-01, 14 days overdue\n- **Juniper Yoga Studio** \u2014 $1,700.00 overdue:\n  - Invoice 1003: $1,700.00 balance (of $3,400.00 total), due 2026-05-31, 45 days overdue\n\nThese figures are drafts for review by a responsible person.",
    "route": "agent",
-   "sql": "customer_name",
+   "sql": "SELECT customer_name, doc_number, txn_date, due_date, total, balance, days_overdue, status FROM qbo_invoices WHERE balance > 0 AND days_overdue > 0 ORDER BY days_overdue DESC",
    "columns": [
     "customer_name",
     "doc_number",

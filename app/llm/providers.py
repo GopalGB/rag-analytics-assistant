@@ -28,11 +28,14 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import math
 import re
 import shlex
 import shutil
 import subprocess
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlparse
@@ -55,21 +58,33 @@ class LLMError(RuntimeError):
 _WAIT_HINT = re.compile(r"try again in\s+(?:(\d+)m)?(\d+(?:\.\d+)?)(ms|s)\b", re.I)
 
 
+def _sane_delay(seconds: float) -> float | None:
+    """A usable wait: finite and not negative (a past HTTP date, "nan", "-5" or an overflow is no hint)."""
+    return round(seconds, 3) if math.isfinite(seconds) and seconds >= 0 else None
+
+
 def retry_after_seconds(headers: Any, body: str) -> float | None:
     """How long a rate-limited provider asked us to wait: the Retry-After header, else a hint in the
     error text ("Please try again in 1m26.4s" / "in 850ms"). None when neither is present."""
     try:
         value = (headers or {}).get("retry-after") or (headers or {}).get("Retry-After")
         if value is not None:
-            return float(value)
-    except (TypeError, ValueError):
+            try:
+                secs = float(value)
+            except (TypeError, ValueError):  # the HTTP-date form: "Wed, 21 Oct 2026 07:28:00 GMT"
+                when = parsedate_to_datetime(str(value))
+                if when.tzinfo is None:
+                    when = when.replace(tzinfo=timezone.utc)
+                secs = (when - datetime.now(timezone.utc)).total_seconds()
+            return _sane_delay(secs)
+    except (TypeError, ValueError, OverflowError):
         pass
     match = _WAIT_HINT.search(body or "")
     if not match:
         return None
     minutes, amount, unit = match.groups()
     seconds = float(amount) / 1000 if unit.lower() == "ms" else float(amount)
-    return round(seconds + 60 * int(minutes or 0), 3)
+    return _sane_delay(seconds + 60 * int(minutes or 0))
 
 
 class BaseLLM(Protocol):

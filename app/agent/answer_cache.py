@@ -18,10 +18,11 @@ import json
 import re
 import threading
 from collections import OrderedDict
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+UTC = timezone.utc  # datetime.UTC needs Python 3.11; the project supports 3.10
 _NOISE = re.compile(r"[\s?.!]+")
 
 
@@ -29,14 +30,28 @@ def normalize(question: str) -> str:
     return _NOISE.sub(" ", question.lower()).strip()
 
 
-def corpus_fingerprint(data_dir: str | Path) -> str:
-    """Content hash of every file under the data directory (names + bytes)."""
+def corpus_fingerprint(data_dir: str | Path, *extra_files: str | Path, salt: str = "") -> str:
+    """Content hash of every file under the data directory (names + bytes), plus any other inputs the
+    answers depend on: extra files (the QuickBooks fixture) and a salt (the report date for "days overdue")."""
     root = Path(data_dir)
     digest = hashlib.sha256()
     for path in sorted(p for p in root.rglob("*") if p.is_file() and not p.name.startswith(".")):
         digest.update(path.relative_to(root).as_posix().encode())
         digest.update(hashlib.sha256(path.read_bytes()).digest())
+    for extra in extra_files:
+        p = Path(extra)
+        if p.is_file():
+            digest.update(b"\0extra:" + p.name.encode())
+            digest.update(hashlib.sha256(p.read_bytes()).digest())
+    if salt:
+        digest.update(b"\0salt:" + salt.encode())
     return digest.hexdigest()
+
+
+def seed_fingerprint(settings: Any) -> str:
+    """The fingerprint a seed must match: documents, the QuickBooks fixture and the report date. Used by
+    both the server and scripts/build_answer_cache.py so they can never disagree."""
+    return corpus_fingerprint(settings.data_dir, settings.qbo_fixture, salt=settings.report_as_of or "")
 
 
 def cacheable(payload: dict[str, Any]) -> bool:
@@ -51,7 +66,8 @@ class AnswerCache:
 
     @classmethod
     def from_seed(
-        cls, seed_path: str | Path | None, data_dir: str | Path, max_entries: int = 256
+        cls, seed_path: str | Path | None, data_dir: str | Path, max_entries: int = 256, *,
+        fingerprint: str | None = None,
     ) -> AnswerCache:
         cache = cls(max_entries)
         path = Path(seed_path) if seed_path else None
@@ -61,7 +77,7 @@ class AnswerCache:
             seed = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return cache
-        if seed.get("fingerprint") != corpus_fingerprint(data_dir):
+        if seed.get("fingerprint") != (fingerprint or corpus_fingerprint(data_dir)):
             return cache  # answers were generated from different documents
         for question, payload in (seed.get("answers") or {}).items():
             if isinstance(payload, dict):
