@@ -31,8 +31,9 @@ def test_retry_after_rejects_unusable_header_values(value):
     assert retry_after_seconds({"retry-after": value}, "") is None
 
 
-def test_retry_after_rejects_an_overflowing_body_hint():
-    assert retry_after_seconds({}, "Please try again in " + "9" * 400 + "s.") is None
+@pytest.mark.parametrize("hint", ["9" * 400 + "s", "9" * 400 + "m1s", "1m" + "9" * 400 + "s", "9" * 400 + "ms"])
+def test_retry_after_rejects_an_overflowing_body_hint(hint):
+    assert retry_after_seconds({}, f"Please try again in {hint}.") is None
 
 
 # --------------------------------------------------------------------------- router wait guard

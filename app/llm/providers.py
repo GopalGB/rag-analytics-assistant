@@ -83,8 +83,11 @@ def retry_after_seconds(headers: Any, body: str) -> float | None:
     if not match:
         return None
     minutes, amount, unit = match.groups()
-    seconds = float(amount) / 1000 if unit.lower() == "ms" else float(amount)
-    return _sane_delay(seconds + 60 * int(minutes or 0))
+    try:
+        seconds = float(amount) / 1000 if unit.lower() == "ms" else float(amount)
+        return _sane_delay(seconds + 60 * int(minutes or 0))
+    except (OverflowError, ValueError):  # an absurd number of digits is no usable hint
+        return None
 
 
 class BaseLLM(Protocol):
