@@ -66,7 +66,10 @@ def reconcile(records: list[InvoiceRecord], store: DataStore) -> list[dict[str, 
     def row(rec: InvoiceRecord | None, bill: dict | None, status: str, detail: str) -> dict[str, Any]:
         doc_total = rec.values.get("total") if rec else None
         qbo_total = float(bill["total"]) if bill and bill.get("total") is not None else None
-        diff = round(doc_total - qbo_total, 2) if doc_total is not None and qbo_total is not None else None
+        # amounts in two different currencies are never subtracted (no conversion is done here)
+        comparable = status != "currency_mismatch"
+        diff = (round(doc_total - qbo_total, 2)
+                if comparable and doc_total is not None and qbo_total is not None else None)
         return {
             "source": "document" if rec else "quickbooks",
             "file": rec.file if rec else None,

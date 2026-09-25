@@ -127,8 +127,13 @@ def spend_by_supplier(store: DataStore, top: int = 8) -> list[dict[str, Any]]:
 def cash_flow(store: DataStore) -> dict[str, Any]:
     """Monthly money in/out and the running balance from the bank statement(s)."""
     from app.accounting.bank import load_bank_lines
+    from app.data.store import ResultTooLargeError
 
-    lines = [ln for ln in load_bank_lines(store) if ln["date"]]
+    try:
+        lines = [ln for ln in load_bank_lines(store) if ln["date"]]
+    except ResultTooLargeError as exc:  # never chart part of a statement as if it were all of it
+        _report(f"Cash flow is not shown: the bank statement has {exc}")
+        return {"months": [], "balance": []}
     if not lines:
         return {"months": [], "balance": []}
     months: dict[str, dict[str, float]] = {}

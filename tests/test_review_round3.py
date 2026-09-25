@@ -298,3 +298,34 @@ def test_new_audit_records_chain_to_the_last_valid_entry(tmp_path):
 
 def test_lowercase_digit_free_invoice_number():
     assert extract_rules("Acme Ltd\nINVOICE\nInvoice ab-cd\nTotal: $1.00").fields["invoice_number"].value == "ab-cd"
+
+
+# --------------------------------------------------------------------------- review of ea33f18..24f1e96
+def test_currency_mismatch_has_no_cross_currency_difference(tmp_path):
+    from app.accounting.reconcile import load_reconciliation, reconcile
+
+    store = DataStore(str(tmp_path / "x.duckdb"))
+    store.load_dataframe("qbo_bills", pd.DataFrame([
+        {"id": "1", "doc_number": "E-1", "vendor_name": "Euro GmbH", "txn_date": "2026-07-01", "total": 120.0,
+         "balance": 120.0, "currency": "USD"}]))
+    row = next(r for r in reconcile([_record("invoices/e1.pdf", "Euro GmbH", "E-1", 100.0, "EUR")], store)
+               if r["file"])
+    assert row["status"] == "currency_mismatch" and row["difference"] is None
+    assert row["document_total"] == 100.0 and row["qbo_total"] == 120.0  # both kept for review
+    load_reconciliation(store, [row])
+    item = next(i for i in insights.attention(store, [], date(2026, 7, 15))["items"] if "Euro GmbH" in i["title"])
+    assert item["amount"] == 100.0 and item["currency"] == "EUR"  # the invoice's own amount, not 100 - 120
+    store.close()
+
+
+def test_cash_flow_reports_an_unreadable_statement_instead_of_failing(tmp_path, monkeypatch):
+    import app.data.store as store_mod
+
+    store = DataStore(str(tmp_path / "cf.duckdb"))
+    store.load_dataframe("bank_statement", pd.DataFrame({"date": ["2026-07-01"] * 6, "description": ["x"] * 6,
+                                                         "amount": [1.0] * 6}))
+    monkeypatch.setattr(store_mod, "INTERNAL_MAX_ROWS", 3)
+    with analytics.collect_query_errors() as errors:
+        assert analytics.cash_flow(store) == {"months": [], "balance": []}
+    assert errors and "Cash flow is not shown" in errors[0]
+    store.close()
